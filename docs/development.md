@@ -36,7 +36,8 @@ tests/
 ├── test_config.py       # 17 tests
 ├── test_poller.py       # 21 tests
 ├── test_store.py        # 24 tests
-└── test_dbus_service.py # 28 tests
+├── test_dbus_service.py # 28 tests
+└── test_notifier.py     # 24 tests
 ```
 
 ## Running checks
@@ -54,7 +55,7 @@ uv run ruff format .
 uv run mypy .
 
 # Tests
-uv run pytest            # 90 tests, ~8 seconds
+uv run pytest            # 114 tests, ~8 seconds
 uv run pytest -v         # verbose output
 uv run pytest -x         # stop on first failure
 ```

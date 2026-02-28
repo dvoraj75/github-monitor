@@ -4,9 +4,9 @@ A Python daemon that polls GitHub for pull requests assigned to you (as reviewer
 or assignee), holds state in memory, exposes it over D-Bus, and sends desktop
 notifications when new PRs arrive.
 
-> **Status:** Work in progress. Phases 1-5 (scaffold, configuration, poller,
-> state store, D-Bus service) are complete with full test coverage. Phases 6-8
-> (notifier, daemon, systemd) are not yet implemented.
+> **Status:** Work in progress. Phases 1-6 (scaffold, configuration, poller,
+> state store, D-Bus service, notifier) are complete with full test coverage.
+> Phases 7-8 (daemon, systemd) are not yet implemented.
 
 ## Architecture
 
@@ -96,8 +96,8 @@ uv run python -m github_monitor
 ```
 
 > **Note:** The daemon entry point is a stub until Phase 7 is implemented. The
-> configuration, poller, state store, and D-Bus service modules are fully
-> functional and can be used programmatically.
+> configuration, poller, state store, D-Bus service, and notifier modules are
+> fully functional and can be used programmatically.
 
 ## Project structure
 
@@ -115,14 +115,15 @@ github-monitor/
 │   ├── poller.py                # GitHub API client (search, pagination, rate limits)
 │   ├── store.py                 # In-memory state store with diff computation
 │   ├── dbus_service.py          # D-Bus interface (methods, signals, bus setup)
-│   ├── notifier.py              # Desktop notifications (not yet implemented)
+│   ├── notifier.py              # Desktop notifications via notify-send
 │   └── daemon.py                # Main daemon loop (not yet implemented)
 │
 ├── tests/
 │   ├── test_config.py           # 17 tests for config module
 │   ├── test_poller.py           # 21 tests for poller module
 │   ├── test_store.py            # 24 tests for store module
-│   └── test_dbus_service.py     # 28 tests for D-Bus service module
+│   ├── test_dbus_service.py     # 28 tests for D-Bus service module
+│   └── test_notifier.py         # 24 tests for notifier module
 │
 └── docs/                        # Detailed documentation
     ├── architecture.md
@@ -142,7 +143,7 @@ github-monitor/
 
 ```bash
 uv sync                        # install all deps (runtime + dev group)
-uv run pytest                  # run tests (90 passing)
+uv run pytest                  # run tests (114 passing)
 uv run ruff check .            # lint (ALL rules enabled)
 uv run ruff format .           # format (black-compatible)
 uv run mypy .                  # type check (strict mode)
@@ -163,7 +164,7 @@ details, and project structure notes.
 | [docs/modules/poller.md](docs/modules/poller.md) | `poller.py` API reference |
 | [docs/modules/store.md](docs/modules/store.md) | `store.py` API reference |
 | [docs/modules/dbus_service.md](docs/modules/dbus_service.md) | `dbus_service.py` API reference |
-| [docs/modules/notifier.md](docs/modules/notifier.md) | `notifier.py` API reference (planned) |
+| [docs/modules/notifier.md](docs/modules/notifier.md) | `notifier.py` API reference |
 | [docs/modules/daemon.md](docs/modules/daemon.md) | `daemon.py` API reference (planned) |
 
 ## Implementation phases
@@ -175,7 +176,7 @@ details, and project structure notes.
 | 3. GitHub Poller | `poller.py` | Done |
 | 4. State Store | `store.py` | Done |
 | 5. D-Bus Service | `dbus_service.py` | Done |
-| 6. Notifier | `notifier.py` | Not started |
+| 6. Notifier | `notifier.py` | Done |
 | 7. Daemon | `daemon.py`, `__main__.py` | Not started |
 | 8. Systemd | `github-monitor.service` | Not started |
 
