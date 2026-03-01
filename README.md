@@ -1,5 +1,7 @@
 # github-monitor
 
+![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue) ![License: MIT](https://img.shields.io/badge/license-MIT-green) ![Code style: Ruff](https://img.shields.io/badge/code%20style-ruff-000000) ![Type checked: mypy](https://img.shields.io/badge/type%20checked-mypy-blue) ![Async](https://img.shields.io/badge/async-asyncio-purple)
+
 A Python daemon that polls GitHub for pull requests assigned to you (as reviewer
 or assignee), holds state in memory, exposes it over D-Bus, and sends desktop
 notifications when new PRs arrive.
@@ -207,4 +209,4 @@ Dev-only: `pytest`, `pytest-asyncio`, `aioresponses`, `ruff`, `mypy`.
 
 ## License
 
-TBD
+MIT — see [LICENSE](LICENSE) for details.
