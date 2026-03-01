@@ -1,10 +1,20 @@
 # github-monitor
 
-![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue) ![License: MIT](https://img.shields.io/badge/license-MIT-green) ![Code style: Ruff](https://img.shields.io/badge/code%20style-ruff-000000) ![Type checked: mypy](https://img.shields.io/badge/type%20checked-mypy-blue) ![Async](https://img.shields.io/badge/async-asyncio-purple)
+![CI](https://github.com/dvoraj75/github-monitor/actions/workflows/ci.yml/badge.svg) ![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue) ![License: MIT](https://img.shields.io/badge/license-MIT-green) ![Code style: Ruff](https://img.shields.io/badge/code%20style-ruff-000000) ![Type checked: mypy](https://img.shields.io/badge/type%20checked-mypy-blue) ![Async](https://img.shields.io/badge/async-asyncio-purple)
 
 A Python daemon that polls GitHub for pull requests assigned to you (as reviewer
 or assignee), holds state in memory, exposes it over D-Bus, and sends desktop
 notifications when new PRs arrive.
+
+## Features
+
+- **Live PR monitoring** -- polls GitHub Search API for PRs assigned to you or requesting your review
+- **Desktop notifications** -- individual notifications for 1-3 new PRs, summary for more; includes author avatars and clickable links
+- **D-Bus interface** -- query current PR state, trigger manual refresh, subscribe to change signals
+- **Systemd integration** -- runs as a user service with security hardening
+- **Resilient** -- exponential backoff, rate limit handling, graceful shutdown via signals (SIGTERM, SIGHUP for config reload)
+
+![Notification screenshot](docs/screenshot.png)
 
 ## Architecture
 
@@ -56,7 +66,7 @@ For a deeper dive, see [docs/architecture.md](docs/architecture.md).
 ### Install
 
 ```bash
-git clone https://github.com/<you>/github-monitor.git
+git clone https://github.com/dvoraj75/github-monitor.git
 cd github-monitor
 uv sync            # installs runtime + dev dependencies
 ```
@@ -172,7 +182,7 @@ github-monitor/
 
 ```bash
 uv sync                        # install all deps (runtime + dev group)
-uv run pytest                  # run tests (151 passing)
+uv run pytest                  # run tests (ALL passing)
 uv run ruff check .            # lint (ALL rules enabled)
 uv run ruff format .           # format (black-compatible)
 uv run mypy .                  # type check (strict mode)

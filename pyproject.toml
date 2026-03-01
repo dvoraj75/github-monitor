@@ -6,11 +6,41 @@ build-backend = "hatchling.build"
 name = "github-monitor"
 version = "1.0.0"
 description = "Daemon that monitors GitHub PRs and exposes state over D-Bus"
+readme = "README.md"
+license = "MIT"
 requires-python = ">=3.13"
+authors = [
+    { name = "Jan Dvorak" },
+]
+keywords = [
+    "github",
+    "pull-request",
+    "monitor",
+    "dbus",
+    "notifications",
+    "daemon",
+    "asyncio",
+    "linux",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: No Input/Output (Daemon)",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Version Control :: Git",
+]
 dependencies = [
     "aiohttp>=3.9,<4",
     "dbus-next>=0.2.3,<1",
 ]
+
+[project.urls]
+Homepage = "https://github.com/dvoraj75/github-monitor"
+Repository = "https://github.com/dvoraj75/github-monitor"
+Documentation = "https://github.com/dvoraj75/github-monitor/tree/main/docs"
+"Bug Tracker" = "https://github.com/dvoraj75/github-monitor/issues"
 
 [project.scripts]
 github-monitor = "github_monitor.__main__:main"
