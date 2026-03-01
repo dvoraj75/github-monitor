@@ -20,7 +20,7 @@ class ConfigError(Exception):
     """Raised when configuration is invalid or cannot be loaded."""
 
 
-@dataclass
+@dataclass(frozen=True)
 class Config:
     """Validated configuration for github-monitor."""
 
