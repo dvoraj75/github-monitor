@@ -32,6 +32,84 @@ If no config file is found at the resolved path, a `ConfigError` is raised.
 | `notification_threshold` | integer | No | `3` | PRs above this count get a summary notification instead of individual ones (minimum: 1) |
 | `notification_urgency` | string | No | `"normal"` | Notification urgency: `"low"`, `"normal"`, or `"critical"` |
 
+## GitHub token setup
+
+github-monitor needs a GitHub personal access token (PAT) to query the
+Search API for pull requests. GitHub offers two token types: **classic** and
+**fine-grained**. Either works; fine-grained tokens allow tighter scoping and
+are GitHub's recommended path going forward.
+
+### Option A: Classic personal access token
+
+Classic tokens use broad OAuth scopes. They are simpler to set up and widely
+supported.
+
+1. Open **Settings > Developer settings > Personal access tokens > Tokens
+   (classic)** in GitHub, or go directly to:\
+   <https://github.com/settings/tokens/new>
+2. Fill in the form:
+   - **Note** -- a descriptive name, e.g. `github-monitor`
+   - **Expiration** -- pick a duration (90 days recommended; see
+     [Security tips](#security-tips) below)
+   - **Scopes** -- tick the required scope from the table below
+3. Click **Generate token** and copy the value immediately (it is shown only
+   once).
+
+| Scope | When to use | What it grants |
+|---|---|---|
+| `repo` | You monitor **private** repositories | Full read/write access to private repos (GitHub does not offer a read-only private-repo scope for classic tokens) |
+| `public_repo` | You **only** monitor public repositories | Read access to public repo data -- sufficient if all your review requests are on public repos |
+
+> **Why `repo`?** github-monitor calls the GitHub Search Issues API
+> (`search/issues`) to find PRs where you are a reviewer or assignee. For
+> private repos, this endpoint requires the `repo` scope. If you only work
+> with public repos, `public_repo` is enough.
+
+### Option B: Fine-grained personal access token
+
+Fine-grained tokens let you grant the minimum permissions needed and restrict
+access to specific repositories or organisations.
+
+1. Open **Settings > Developer settings > Personal access tokens >
+   Fine-grained tokens** in GitHub, or go directly to:\
+   <https://github.com/settings/personal-access-tokens/new>
+2. Fill in the form:
+   - **Token name** -- e.g. `github-monitor`
+   - **Expiration** -- pick a duration (90 days recommended)
+   - **Resource owner** -- select your personal account or the organisation
+     whose repos you want to monitor
+   - **Repository access** -- choose one of:
+     - *All repositories* -- monitor PRs across every repo you have access to
+     - *Only select repositories* -- pick specific repos (must match the
+       `repos` list in your config, if set)
+   - **Permissions** -- expand **Repository permissions** and set the entries
+     from the table below; leave everything else at *No access*
+3. Click **Generate token** and copy the value immediately.
+
+| Permission | Access level | Why needed |
+|---|---|---|
+| **Pull requests** | Read-only | Query pull requests assigned to you or requesting your review |
+| **Metadata** | Read-only | Automatically granted when any other repository permission is selected |
+
+> **Tip:** If you use the `repos` config option to filter to specific
+> repositories, you can scope the fine-grained token to exactly those repos
+> for minimal privilege.
+
+### Security tips
+
+- **Prefer environment variables.** Set `GITHUB_TOKEN` instead of putting the
+  token in `config.toml` to avoid accidentally committing secrets (see
+  [Environment variable overrides](#environment-variable-overrides) below).
+- **Set an expiration date** and rotate tokens before they expire. GitHub can
+  send you an email reminder before expiry.
+- **Use the minimum scope.** If you only monitor public repos, `public_repo`
+  (classic) or read-only Pull requests (fine-grained) is sufficient -- there
+  is no need for full `repo` access.
+- **Never commit `config.toml`** -- it is already listed in `.gitignore`.
+- **Revoke unused tokens** at
+  <https://github.com/settings/tokens> (classic) or
+  <https://github.com/settings/personal-access-tokens> (fine-grained).
+
 ## Environment variable overrides
 
 | Variable | Overrides | Notes |
