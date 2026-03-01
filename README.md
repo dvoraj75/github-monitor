@@ -195,6 +195,7 @@ details, and project structure notes.
 
 | Document | Description |
 |---|---|
+| [ROADMAP.md](ROADMAP.md) | Development roadmap and future plans |
 | [docs/architecture.md](docs/architecture.md) | System design, component interactions, design decisions |
 | [docs/configuration.md](docs/configuration.md) | Full configuration reference with examples |
 | [docs/development.md](docs/development.md) | Developer guide: tooling, conventions, testing |
