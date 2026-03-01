@@ -538,7 +538,8 @@ class TestDownloadAvatar:
     """_download_avatar fetches GitHub avatars to local files."""
 
     async def test_returns_none_for_empty_url(self) -> None:
-        result = await _download_avatar("")
+        mock_session = MagicMock()
+        result = await _download_avatar("", mock_session)
         assert result is None
 
     async def test_downloads_and_returns_path(self) -> None:
@@ -546,7 +547,6 @@ class TestDownloadAvatar:
         mock_resp.status = 200
         mock_resp.read = AsyncMock(return_value=b"\x89PNG fake image data")
 
-        # session.get() returns a context manager, not a coroutine
         mock_cm = MagicMock()
         mock_cm.__aenter__ = AsyncMock(return_value=mock_resp)
         mock_cm.__aexit__ = AsyncMock(return_value=False)
@@ -554,17 +554,11 @@ class TestDownloadAvatar:
         mock_session = MagicMock()
         mock_session.get.return_value = mock_cm
 
-        # ClientSession() itself is an async context manager
-        mock_session_cm = MagicMock()
-        mock_session_cm.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session_cm.__aexit__ = AsyncMock(return_value=False)
+        # Clear module-level cache to force download
+        from github_monitor.notifier import _avatar_cache
 
-        with patch("github_monitor.notifier.aiohttp.ClientSession", return_value=mock_session_cm):
-            # Clear module-level cache to force download
-            from github_monitor.notifier import _avatar_cache
-
-            _avatar_cache.clear()
-            result = await _download_avatar("https://avatars.githubusercontent.com/u/99999")
+        _avatar_cache.clear()
+        result = await _download_avatar("https://avatars.githubusercontent.com/u/99999", mock_session)
 
         assert result is not None
         assert result.endswith(".png")
@@ -580,15 +574,10 @@ class TestDownloadAvatar:
         mock_session = MagicMock()
         mock_session.get.return_value = mock_cm
 
-        mock_session_cm = MagicMock()
-        mock_session_cm.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session_cm.__aexit__ = AsyncMock(return_value=False)
+        from github_monitor.notifier import _avatar_cache
 
-        with patch("github_monitor.notifier.aiohttp.ClientSession", return_value=mock_session_cm):
-            from github_monitor.notifier import _avatar_cache
-
-            _avatar_cache.clear()
-            result = await _download_avatar("https://avatars.githubusercontent.com/u/missing")
+        _avatar_cache.clear()
+        result = await _download_avatar("https://avatars.githubusercontent.com/u/missing", mock_session)
 
         assert result is None
 
@@ -600,15 +589,10 @@ class TestDownloadAvatar:
         mock_session = MagicMock()
         mock_session.get.return_value = mock_cm
 
-        mock_session_cm = MagicMock()
-        mock_session_cm.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session_cm.__aexit__ = AsyncMock(return_value=False)
+        from github_monitor.notifier import _avatar_cache
 
-        with patch("github_monitor.notifier.aiohttp.ClientSession", return_value=mock_session_cm):
-            from github_monitor.notifier import _avatar_cache
-
-            _avatar_cache.clear()
-            result = await _download_avatar("https://avatars.githubusercontent.com/u/error")
+        _avatar_cache.clear()
+        result = await _download_avatar("https://avatars.githubusercontent.com/u/error", mock_session)
 
         assert result is None
 

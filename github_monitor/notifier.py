@@ -45,7 +45,7 @@ _avatar_cache: dict[str, Path] = {}
 _background_tasks: set[asyncio.Task[None]] = set()
 
 
-async def _download_avatar(avatar_url: str) -> str | None:
+async def _download_avatar(avatar_url: str, session: aiohttp.ClientSession) -> str | None:
     """Download a GitHub avatar to a local temp file.
 
     Returns the local file path as a string, or None on failure.
@@ -75,7 +75,7 @@ async def _download_avatar(avatar_url: str) -> str | None:
         _avatar_cache[avatar_url] = dest
         return str(dest)
 
-    data = await _fetch_avatar_bytes(avatar_url)
+    data = await _fetch_avatar_bytes(avatar_url, session)
     if data is None:
         return None
 
@@ -89,11 +89,11 @@ async def _download_avatar(avatar_url: str) -> str | None:
     return str(dest)
 
 
-async def _fetch_avatar_bytes(avatar_url: str) -> bytes | None:
+async def _fetch_avatar_bytes(avatar_url: str, session: aiohttp.ClientSession) -> bytes | None:
     """Fetch avatar image bytes from GitHub. Returns None on failure."""
     sized_url = f"{avatar_url}?s={_AVATAR_SIZE}"
     try:
-        async with aiohttp.ClientSession() as session, session.get(sized_url) as resp:
+        async with session.get(sized_url) as resp:
             if resp.status != 200:  # noqa: PLR2004
                 logger.debug("Avatar download failed (HTTP %d): %s", resp.status, sized_url)
                 return None
@@ -117,14 +117,15 @@ async def notify_new_prs(new_prs: list[PullRequest]) -> None:
         return
 
     if len(new_prs) <= _INDIVIDUAL_THRESHOLD:
-        for pr in new_prs:
-            icon = await _download_avatar(pr.author_avatar_url)
-            await _send_notification(
-                summary=f"PR Review: {pr.repo_full_name}",
-                body=f"#{pr.number} {pr.title}\nby {pr.author}",
-                url=pr.url,
-                icon=icon,
-            )
+        async with aiohttp.ClientSession() as session:
+            for pr in new_prs:
+                icon = await _download_avatar(pr.author_avatar_url, session)
+                await _send_notification(
+                    summary=f"PR Review: {pr.repo_full_name}",
+                    body=f"#{pr.number} {pr.title}\nby {pr.author}",
+                    url=pr.url,
+                    icon=icon,
+                )
     else:
         body = "\n".join(f"- {pr.repo_full_name}#{pr.number}: {pr.title}" for pr in new_prs[:_BATCH_BODY_LIMIT])
         await _send_notification(
