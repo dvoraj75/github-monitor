@@ -45,6 +45,7 @@ def _make_pr(
         title=title,
         repo_full_name=repo,
         author=author,
+        author_avatar_url=f"https://avatars.githubusercontent.com/u/{number}",
         number=number,
         updated_at=_NOW,
         review_requested=True,

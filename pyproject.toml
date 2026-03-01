@@ -46,10 +46,13 @@ ignore = [
     "S101",    # assert usage is fine in tests
     "S105",    # hardcoded passwords are test fixtures, not real secrets
     "S106",    # hardcoded passwords in function args — same as above
+    "S108",    # hardcoded temp file paths are fine in tests
     "PLR2004", # magic values are fine in tests
+    "PLC0415", # imports inside test functions for cache access
     "SLF001",  # private member access is fine in tests
     "INP001",  # tests don't need __init__.py
     "ARG001",  # unused callback args are fine in tests (aioresponses callbacks)
+    "ERA001",  # commented-out code used as section headers in tests
 ]
 
 [tool.ruff.format]

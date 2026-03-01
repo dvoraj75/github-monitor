@@ -44,6 +44,7 @@ class PullRequest:
     title: str
     repo_full_name: str  # e.g. "owner/repo"
     author: str  # login of PR author
+    author_avatar_url: str  # URL to author's GitHub avatar
     number: int
     updated_at: datetime
     review_requested: bool  # True if review requested from user
@@ -70,6 +71,7 @@ def _parse_pr(
         title=item["title"],
         repo_full_name=repo_full_name,
         author=item["user"]["login"],
+        author_avatar_url=item["user"].get("avatar_url", ""),
         number=item["number"],
         updated_at=datetime.fromisoformat(item["updated_at"]),
         review_requested=review_requested,
@@ -137,18 +139,14 @@ class GitHubClient:
         query = f"type:pr state:open review-requested:{self._username}"
         query = self._append_repo_filter(query)
         items = await self._search_issues(query)
-        return [
-            _parse_pr(item, review_requested=True, assigned=False) for item in items
-        ]
+        return [_parse_pr(item, review_requested=True, assigned=False) for item in items]
 
     async def fetch_assigned(self) -> list[PullRequest]:
         """Fetch open PRs where user is assignee."""
         query = f"type:pr state:open assignee:{self._username}"
         query = self._append_repo_filter(query)
         items = await self._search_issues(query)
-        return [
-            _parse_pr(item, review_requested=False, assigned=True) for item in items
-        ]
+        return [_parse_pr(item, review_requested=False, assigned=True) for item in items]
 
     async def fetch_all(self) -> list[PullRequest]:
         """Fetch both review-requested and assigned PRs, deduplicated by URL."""
@@ -172,6 +170,7 @@ class GitHubClient:
                     title=existing.title,
                     repo_full_name=existing.repo_full_name,
                     author=existing.author,
+                    author_avatar_url=existing.author_avatar_url,
                     number=existing.number,
                     updated_at=existing.updated_at,
                     review_requested=True,

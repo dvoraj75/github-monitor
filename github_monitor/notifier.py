@@ -1,10 +1,20 @@
-"""Desktop notifications for new pull requests via notify-send."""
+"""Desktop notifications for new pull requests via notify-send.
+
+Supports:
+- PR author avatar as notification icon (downloaded from GitHub)
+- Clickable notifications that open the PR in a browser via xdg-open
+"""
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
+import tempfile
+from pathlib import Path
 from typing import TYPE_CHECKING
+
+import aiohttp
 
 if TYPE_CHECKING:
     from .poller import PullRequest
@@ -18,11 +28,88 @@ _INDIVIDUAL_THRESHOLD = 3
 # Maximum number of PRs listed in a batch notification body.
 _BATCH_BODY_LIMIT = 5
 
+# Avatar size in pixels (appended as ?s=N to GitHub avatar URL)
+_AVATAR_SIZE = 64
+
+# Directory for cached avatar files
+_AVATAR_CACHE_DIR = Path(tempfile.gettempdir()) / "github-monitor-avatars"
+
+# In-memory cache: avatar_url -> local file path
+_avatar_cache: dict[str, Path] = {}
+
+# Background tasks kept alive to prevent garbage collection.
+# When a notification with a URL is sent, we spawn a background task
+# that waits for the user to click the notification and then opens
+# the PR in a browser.  The task reference is stored here so it is not
+# garbage-collected before completion.
+_background_tasks: set[asyncio.Task[None]] = set()
+
+
+async def _download_avatar(avatar_url: str) -> str | None:
+    """Download a GitHub avatar to a local temp file.
+
+    Returns the local file path as a string, or None on failure.
+    Results are cached so the same avatar is only downloaded once
+    per daemon lifetime.
+    """
+    if not avatar_url:
+        return None
+
+    # Check in-memory cache
+    if avatar_url in _avatar_cache:
+        cached = _avatar_cache[avatar_url]
+        if cached.exists():
+            return str(cached)
+        # File was deleted — re-download
+        del _avatar_cache[avatar_url]
+
+    # Ensure cache directory exists
+    _AVATAR_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Deterministic filename from URL
+    url_hash = hashlib.md5(avatar_url.encode()).hexdigest()  # noqa: S324
+    dest = _AVATAR_CACHE_DIR / f"{url_hash}.png"
+
+    # If already on disk (from a previous run), reuse
+    if dest.exists():
+        _avatar_cache[avatar_url] = dest
+        return str(dest)
+
+    data = await _fetch_avatar_bytes(avatar_url)
+    if data is None:
+        return None
+
+    try:
+        dest.write_bytes(data)
+    except OSError:
+        logger.debug("Failed to write avatar to %s", dest, exc_info=True)
+        return None
+
+    _avatar_cache[avatar_url] = dest
+    return str(dest)
+
+
+async def _fetch_avatar_bytes(avatar_url: str) -> bytes | None:
+    """Fetch avatar image bytes from GitHub. Returns None on failure."""
+    sized_url = f"{avatar_url}?s={_AVATAR_SIZE}"
+    try:
+        async with aiohttp.ClientSession() as session, session.get(sized_url) as resp:
+            if resp.status != 200:  # noqa: PLR2004
+                logger.debug("Avatar download failed (HTTP %d): %s", resp.status, sized_url)
+                return None
+            return await resp.read()
+    except (aiohttp.ClientError, TimeoutError, OSError):
+        logger.debug("Avatar download error: %s", sized_url, exc_info=True)
+        return None
+
 
 async def notify_new_prs(new_prs: list[PullRequest]) -> None:
     """Send desktop notifications for newly discovered PRs.
 
-    If there are 1-3 new PRs, each gets its own notification.
+    If there are 1-3 new PRs, each gets its own notification with
+    the author's avatar as the icon and a clickable action to open
+    the PR in a browser.
+
     If there are more than 3, a single summary notification is sent
     listing up to the first 5 PRs to avoid desktop spam.
     """
@@ -31,10 +118,12 @@ async def notify_new_prs(new_prs: list[PullRequest]) -> None:
 
     if len(new_prs) <= _INDIVIDUAL_THRESHOLD:
         for pr in new_prs:
+            icon = await _download_avatar(pr.author_avatar_url)
             await _send_notification(
                 summary=f"PR Review: {pr.repo_full_name}",
                 body=f"#{pr.number} {pr.title}\nby {pr.author}",
                 url=pr.url,
+                icon=icon,
             )
     else:
         body = "\n".join(f"- {pr.repo_full_name}#{pr.number}: {pr.title}" for pr in new_prs[:_BATCH_BODY_LIMIT])
@@ -48,7 +137,8 @@ async def _send_notification(
     summary: str,
     body: str,
     *,
-    url: str | None = None,  # noqa: ARG001  # reserved for future action callbacks
+    url: str | None = None,
+    icon: str | None = None,
     urgency: str = "normal",
 ) -> None:
     """Call notify-send as an async subprocess.
@@ -60,31 +150,84 @@ async def _send_notification(
     body:
         Notification body text.
     url:
-        Optional URL (currently unused by notify-send, reserved for
-        future use with action callbacks).
+        Optional URL. When provided, an "Open" action button is added
+        to the notification.  If the user clicks it, the URL is opened
+        in the default browser via ``xdg-open``.
+    icon:
+        Optional path to an icon file.  Falls back to the generic
+        "github" icon name when not provided.
     urgency:
         Notification urgency level (low / normal / critical).
     """
+    icon_arg = f"--icon={icon}" if icon else "--icon=github"
     cmd = [
         "notify-send",
         "--app-name=github-monitor",
         f"--urgency={urgency}",
-        "--icon=github",
-        summary,
-        body,
+        icon_arg,
     ]
+
+    if url:
+        cmd.append("--action=open=Open")
+
+    cmd.extend([summary, body])
+
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
-            stdout=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE if url else asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
         )
-        _, stderr = await proc.communicate()
+
+        if url:
+            # notify-send --action blocks until the user interacts or
+            # the notification expires.  Run the wait in a background
+            # task so we don't block the poll loop.
+            task = asyncio.create_task(_wait_and_open(proc, url))
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
+        else:
+            _, stderr = await proc.communicate()
+            if proc.returncode != 0:
+                logger.warning(
+                    "notify-send failed (exit %d): %s",
+                    proc.returncode,
+                    stderr.decode().strip(),
+                )
+    except FileNotFoundError:
+        logger.warning("notify-send not found. Install libnotify-bin.")
+
+
+async def _wait_and_open(proc: asyncio.subprocess.Process, url: str) -> None:
+    """Wait for a notify-send process and open *url* if the user clicked "Open"."""
+    try:
+        stdout, stderr = await proc.communicate()
         if proc.returncode != 0:
             logger.warning(
                 "notify-send failed (exit %d): %s",
                 proc.returncode,
                 stderr.decode().strip(),
             )
+            return
+
+        action = stdout.decode().strip()
+        if action == "open":
+            await _open_url(url)
+    except (OSError, ValueError):
+        logger.debug("Error waiting for notification action", exc_info=True)
+
+
+async def _open_url(url: str) -> None:
+    """Open *url* in the default browser via xdg-open."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "xdg-open",
+            url,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await proc.communicate()
     except FileNotFoundError:
-        logger.warning("notify-send not found. Install libnotify-bin.")
+        logger.warning("xdg-open not found. Cannot open URL: %s", url)
+    except OSError:
+        logger.debug("Error opening URL %s", url, exc_info=True)

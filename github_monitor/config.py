@@ -93,10 +93,7 @@ def _validate(raw: dict[str, object]) -> Config:
         msg = f"poll_interval must be an integer, got {type(poll_interval).__name__}"
         raise ConfigError(msg)
     if poll_interval < _MIN_POLL_INTERVAL:
-        msg = (
-            f"poll_interval must be >= {_MIN_POLL_INTERVAL} seconds,"
-            f" got {poll_interval}"
-        )
+        msg = f"poll_interval must be >= {_MIN_POLL_INTERVAL} seconds, got {poll_interval}"
         raise ConfigError(msg)
 
     # Repos

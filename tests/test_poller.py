@@ -38,7 +38,7 @@ def _make_search_item(
         "url": f"https://api.github.com/repos/{repo}/pulls/{number}",
         "title": title,
         "number": number,
-        "user": {"login": author},
+        "user": {"login": author, "avatar_url": f"https://avatars.githubusercontent.com/u/{number}"},
         "repository_url": f"https://api.github.com/repos/{repo}",
         "updated_at": updated_at,
     }
@@ -76,6 +76,7 @@ class TestParsePr:
         assert pr.title == "Add feature"
         assert pr.repo_full_name == "org/project"
         assert pr.author == "bob"
+        assert pr.author_avatar_url == "https://avatars.githubusercontent.com/u/42"
         assert pr.number == 42
         assert pr.review_requested is True
         assert pr.assigned is False
@@ -413,9 +414,7 @@ class TestParseNextLink:
             '<https://api.github.com/search/issues?q=test&page=2>; rel="next", '
             '<https://api.github.com/search/issues?q=test&page=5>; rel="last"'
         )
-        assert GitHubClient._parse_next_link(header) == (
-            "https://api.github.com/search/issues?q=test&page=2"
-        )
+        assert GitHubClient._parse_next_link(header) == ("https://api.github.com/search/issues?q=test&page=2")
 
     def test_returns_none_when_no_next(self) -> None:
         header = '<https://api.github.com/search/issues?q=test&page=1>; rel="prev"'

@@ -25,6 +25,7 @@ def _make_pr(
         title=title,
         repo_full_name=repo,
         author="alice",
+        author_avatar_url=f"https://avatars.githubusercontent.com/u/{number}",
         number=number,
         updated_at=datetime.fromisoformat(updated_at),
         review_requested=True,

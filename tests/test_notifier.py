@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import aiohttp
 
 from github_monitor.notifier import (
     _BATCH_BODY_LIMIT,
     _INDIVIDUAL_THRESHOLD,
+    _download_avatar,
     _send_notification,
+    _wait_and_open,
     notify_new_prs,
 )
 from github_monitor.poller import PullRequest
@@ -26,6 +31,7 @@ def _make_pr(
     *,
     title: str = "Fix bug",
     author: str = "alice",
+    author_avatar_url: str = "https://avatars.githubusercontent.com/u/12345",
 ) -> PullRequest:
     """Build a PullRequest for testing."""
     return PullRequest(
@@ -34,6 +40,7 @@ def _make_pr(
         title=title,
         repo_full_name=repo,
         author=author,
+        author_avatar_url=author_avatar_url,
         number=number,
         updated_at=_NOW,
         review_requested=True,
@@ -41,10 +48,10 @@ def _make_pr(
     )
 
 
-def _mock_process(returncode: int = 0, stderr: bytes = b"") -> AsyncMock:
+def _mock_process(returncode: int = 0, stderr: bytes = b"", stdout: bytes = b"") -> AsyncMock:
     """Build a mock process that has communicate() and returncode."""
     proc = AsyncMock()
-    proc.communicate.return_value = (b"", stderr)
+    proc.communicate.return_value = (stdout, stderr)
     proc.returncode = returncode
     return proc
 
@@ -75,10 +82,13 @@ class TestNotifyNewPrsIndividual:
         pr = _make_pr(number=42, repo="acme/web", title="Add login page", author="bob")
         proc = _mock_process()
 
-        with patch(
-            "github_monitor.notifier.asyncio.create_subprocess_exec",
-            return_value=proc,
-        ) as mock_exec:
+        with (
+            patch("github_monitor.notifier._download_avatar", return_value=None),
+            patch(
+                "github_monitor.notifier.asyncio.create_subprocess_exec",
+                return_value=proc,
+            ) as mock_exec,
+        ):
             await notify_new_prs([pr])
 
             mock_exec.assert_called_once()
@@ -92,10 +102,13 @@ class TestNotifyNewPrsIndividual:
         prs = [_make_pr(number=i) for i in range(1, 3)]
         proc = _mock_process()
 
-        with patch(
-            "github_monitor.notifier.asyncio.create_subprocess_exec",
-            return_value=proc,
-        ) as mock_exec:
+        with (
+            patch("github_monitor.notifier._download_avatar", return_value=None),
+            patch(
+                "github_monitor.notifier.asyncio.create_subprocess_exec",
+                return_value=proc,
+            ) as mock_exec,
+        ):
             await notify_new_prs(prs)
 
             assert mock_exec.call_count == 2
@@ -105,10 +118,13 @@ class TestNotifyNewPrsIndividual:
         prs = [_make_pr(number=i) for i in range(1, _INDIVIDUAL_THRESHOLD + 1)]
         proc = _mock_process()
 
-        with patch(
-            "github_monitor.notifier.asyncio.create_subprocess_exec",
-            return_value=proc,
-        ) as mock_exec:
+        with (
+            patch("github_monitor.notifier._download_avatar", return_value=None),
+            patch(
+                "github_monitor.notifier.asyncio.create_subprocess_exec",
+                return_value=proc,
+            ) as mock_exec,
+        ):
             await notify_new_prs(prs)
 
             assert mock_exec.call_count == _INDIVIDUAL_THRESHOLD
@@ -117,10 +133,13 @@ class TestNotifyNewPrsIndividual:
         pr = _make_pr(repo="org/backend")
         proc = _mock_process()
 
-        with patch(
-            "github_monitor.notifier.asyncio.create_subprocess_exec",
-            return_value=proc,
-        ) as mock_exec:
+        with (
+            patch("github_monitor.notifier._download_avatar", return_value=None),
+            patch(
+                "github_monitor.notifier.asyncio.create_subprocess_exec",
+                return_value=proc,
+            ) as mock_exec,
+        ):
             await notify_new_prs([pr])
 
             args = mock_exec.call_args[0]
@@ -130,15 +149,52 @@ class TestNotifyNewPrsIndividual:
         pr = _make_pr(author="charlie")
         proc = _mock_process()
 
-        with patch(
-            "github_monitor.notifier.asyncio.create_subprocess_exec",
-            return_value=proc,
-        ) as mock_exec:
+        with (
+            patch("github_monitor.notifier._download_avatar", return_value=None),
+            patch(
+                "github_monitor.notifier.asyncio.create_subprocess_exec",
+                return_value=proc,
+            ) as mock_exec,
+        ):
             await notify_new_prs([pr])
 
             args = mock_exec.call_args[0]
             body = [a for a in args if "by charlie" in a]
             assert len(body) == 1
+
+    async def test_individual_notification_uses_avatar_icon(self) -> None:
+        """When avatar download succeeds, icon should be the local path."""
+        pr = _make_pr()
+        proc = _mock_process()
+
+        with (
+            patch("github_monitor.notifier._download_avatar", return_value="/tmp/avatar.png"),
+            patch(
+                "github_monitor.notifier.asyncio.create_subprocess_exec",
+                return_value=proc,
+            ) as mock_exec,
+        ):
+            await notify_new_prs([pr])
+
+            args = mock_exec.call_args[0]
+            assert "--icon=/tmp/avatar.png" in args
+
+    async def test_individual_notification_falls_back_to_github_icon(self) -> None:
+        """When avatar download fails, icon should be 'github'."""
+        pr = _make_pr()
+        proc = _mock_process()
+
+        with (
+            patch("github_monitor.notifier._download_avatar", return_value=None),
+            patch(
+                "github_monitor.notifier.asyncio.create_subprocess_exec",
+                return_value=proc,
+            ) as mock_exec,
+        ):
+            await notify_new_prs([pr])
+
+            args = mock_exec.call_args[0]
+            assert "--icon=github" in args
 
 
 # ---------------------------------------------------------------------------
@@ -245,7 +301,7 @@ class TestSendNotificationCommand:
             args = mock_exec.call_args[0]
             assert "--app-name=github-monitor" in args
 
-    async def test_includes_icon(self) -> None:
+    async def test_includes_default_icon(self) -> None:
         proc = _mock_process()
 
         with patch(
@@ -256,6 +312,19 @@ class TestSendNotificationCommand:
 
             args = mock_exec.call_args[0]
             assert "--icon=github" in args
+
+    async def test_custom_icon_path(self) -> None:
+        proc = _mock_process()
+
+        with patch(
+            "github_monitor.notifier.asyncio.create_subprocess_exec",
+            return_value=proc,
+        ) as mock_exec:
+            await _send_notification("title", "body", icon="/tmp/avatar.png")
+
+            args = mock_exec.call_args[0]
+            assert "--icon=/tmp/avatar.png" in args
+            assert "--icon=github" not in args
 
     async def test_default_urgency_is_normal(self) -> None:
         proc = _mock_process()
@@ -294,8 +363,8 @@ class TestSendNotificationCommand:
             assert "My Title" in args
             assert "My Body" in args
 
-    async def test_url_param_accepted(self) -> None:
-        """url is accepted without error (reserved for future use)."""
+    async def test_url_adds_action_flag(self) -> None:
+        """When url is provided, --action=open=Open should be in the command."""
         proc = _mock_process()
 
         with patch(
@@ -305,6 +374,47 @@ class TestSendNotificationCommand:
             await _send_notification("title", "body", url="https://github.com/owner/repo/pull/1")
 
             mock_exec.assert_called_once()
+            args = mock_exec.call_args[0]
+            assert "--action=open=Open" in args
+
+    async def test_no_url_omits_action_flag(self) -> None:
+        """When no url is provided, --action should not be in the command."""
+        proc = _mock_process()
+
+        with patch(
+            "github_monitor.notifier.asyncio.create_subprocess_exec",
+            return_value=proc,
+        ) as mock_exec:
+            await _send_notification("title", "body")
+
+            args = mock_exec.call_args[0]
+            assert all("--action" not in a for a in args)
+
+    async def test_url_uses_pipe_for_stdout(self) -> None:
+        """When url is provided, stdout should be PIPE to read action response."""
+        proc = _mock_process()
+
+        with patch(
+            "github_monitor.notifier.asyncio.create_subprocess_exec",
+            return_value=proc,
+        ) as mock_exec:
+            await _send_notification("title", "body", url="https://github.com/owner/repo/pull/1")
+
+            kwargs = mock_exec.call_args[1]
+            assert kwargs["stdout"] == asyncio.subprocess.PIPE
+
+    async def test_no_url_uses_devnull_for_stdout(self) -> None:
+        """When no url is provided, stdout should be DEVNULL."""
+        proc = _mock_process()
+
+        with patch(
+            "github_monitor.notifier.asyncio.create_subprocess_exec",
+            return_value=proc,
+        ) as mock_exec:
+            await _send_notification("title", "body")
+
+            kwargs = mock_exec.call_args[1]
+            assert kwargs["stdout"] == asyncio.subprocess.DEVNULL
 
     async def test_stderr_captured(self) -> None:
         proc = _mock_process()
@@ -378,6 +488,129 @@ class TestSendNotificationErrors:
         ):
             # Should complete without raising
             await _send_notification("title", "body")
+
+
+# ---------------------------------------------------------------------------
+# Tests: _wait_and_open — clickable notification action
+# ---------------------------------------------------------------------------
+
+
+class TestWaitAndOpen:
+    """_wait_and_open handles notification action responses."""
+
+    async def test_opens_url_when_action_is_open(self) -> None:
+        proc = _mock_process(stdout=b"open\n")
+
+        with patch("github_monitor.notifier._open_url", new_callable=AsyncMock) as mock_open:
+            await _wait_and_open(proc, "https://github.com/owner/repo/pull/1")
+            mock_open.assert_awaited_once_with("https://github.com/owner/repo/pull/1")
+
+    async def test_does_not_open_url_on_empty_action(self) -> None:
+        """Notification expired without click — no URL should be opened."""
+        proc = _mock_process(stdout=b"")
+
+        with patch("github_monitor.notifier._open_url", new_callable=AsyncMock) as mock_open:
+            await _wait_and_open(proc, "https://github.com/owner/repo/pull/1")
+            mock_open.assert_not_awaited()
+
+    async def test_does_not_open_url_on_nonzero_exit(self) -> None:
+        proc = _mock_process(returncode=1, stderr=b"error", stdout=b"open\n")
+
+        with patch("github_monitor.notifier._open_url", new_callable=AsyncMock) as mock_open:
+            await _wait_and_open(proc, "https://github.com/owner/repo/pull/1")
+            mock_open.assert_not_awaited()
+
+    async def test_exception_does_not_propagate(self) -> None:
+        """Errors in _wait_and_open should be caught, not propagated."""
+        proc = AsyncMock()
+        proc.communicate.side_effect = OSError("unexpected")
+
+        # Should not raise
+        await _wait_and_open(proc, "https://github.com/owner/repo/pull/1")
+
+
+# ---------------------------------------------------------------------------
+# Tests: _download_avatar
+# ---------------------------------------------------------------------------
+
+
+class TestDownloadAvatar:
+    """_download_avatar fetches GitHub avatars to local files."""
+
+    async def test_returns_none_for_empty_url(self) -> None:
+        result = await _download_avatar("")
+        assert result is None
+
+    async def test_downloads_and_returns_path(self) -> None:
+        mock_resp = AsyncMock()
+        mock_resp.status = 200
+        mock_resp.read = AsyncMock(return_value=b"\x89PNG fake image data")
+
+        # session.get() returns a context manager, not a coroutine
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = MagicMock()
+        mock_session.get.return_value = mock_cm
+
+        # ClientSession() itself is an async context manager
+        mock_session_cm = MagicMock()
+        mock_session_cm.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_cm.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("github_monitor.notifier.aiohttp.ClientSession", return_value=mock_session_cm):
+            # Clear module-level cache to force download
+            from github_monitor.notifier import _avatar_cache
+
+            _avatar_cache.clear()
+            result = await _download_avatar("https://avatars.githubusercontent.com/u/99999")
+
+        assert result is not None
+        assert result.endswith(".png")
+
+    async def test_returns_none_on_http_error(self) -> None:
+        mock_resp = AsyncMock()
+        mock_resp.status = 404
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = MagicMock()
+        mock_session.get.return_value = mock_cm
+
+        mock_session_cm = MagicMock()
+        mock_session_cm.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_cm.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("github_monitor.notifier.aiohttp.ClientSession", return_value=mock_session_cm):
+            from github_monitor.notifier import _avatar_cache
+
+            _avatar_cache.clear()
+            result = await _download_avatar("https://avatars.githubusercontent.com/u/missing")
+
+        assert result is None
+
+    async def test_returns_none_on_network_error(self) -> None:
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(side_effect=aiohttp.ClientError("connection failed"))
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = MagicMock()
+        mock_session.get.return_value = mock_cm
+
+        mock_session_cm = MagicMock()
+        mock_session_cm.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_cm.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("github_monitor.notifier.aiohttp.ClientSession", return_value=mock_session_cm):
+            from github_monitor.notifier import _avatar_cache
+
+            _avatar_cache.clear()
+            result = await _download_avatar("https://avatars.githubusercontent.com/u/error")
+
+        assert result is None
 
 
 # ---------------------------------------------------------------------------

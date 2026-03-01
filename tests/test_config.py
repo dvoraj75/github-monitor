@@ -138,38 +138,28 @@ def test_missing_username(tmp_path: Path) -> None:
 
 def test_poll_interval_too_low(tmp_path: Path) -> None:
     p = tmp_path / "config.toml"
-    p.write_text(
-        'github_token = "ghp_abc"\ngithub_username = "user"\npoll_interval = 10\n'
-    )
+    p.write_text('github_token = "ghp_abc"\ngithub_username = "user"\npoll_interval = 10\n')
     with pytest.raises(ConfigError, match="poll_interval must be >= 30"):
         load_config(p)
 
 
 def test_poll_interval_wrong_type(tmp_path: Path) -> None:
     p = tmp_path / "config.toml"
-    p.write_text(
-        'github_token = "ghp_abc"\ngithub_username = "user"\npoll_interval = "fast"\n'
-    )
+    p.write_text('github_token = "ghp_abc"\ngithub_username = "user"\npoll_interval = "fast"\n')
     with pytest.raises(ConfigError, match="poll_interval must be an integer"):
         load_config(p)
 
 
 def test_invalid_repo_format(tmp_path: Path) -> None:
     p = tmp_path / "config.toml"
-    p.write_text(
-        'github_token = "ghp_abc"\n'
-        'github_username = "user"\n'
-        'repos = ["not-a-valid-repo"]\n'
-    )
+    p.write_text('github_token = "ghp_abc"\ngithub_username = "user"\nrepos = ["not-a-valid-repo"]\n')
     with pytest.raises(ConfigError, match="Invalid repo format"):
         load_config(p)
 
 
 def test_repos_not_a_list(tmp_path: Path) -> None:
     p = tmp_path / "config.toml"
-    p.write_text(
-        'github_token = "ghp_abc"\ngithub_username = "user"\nrepos = "owner/repo"\n'
-    )
+    p.write_text('github_token = "ghp_abc"\ngithub_username = "user"\nrepos = "owner/repo"\n')
     with pytest.raises(ConfigError, match="repos must be a list"):
         load_config(p)
 
@@ -196,8 +186,6 @@ def test_empty_username_string(tmp_path: Path) -> None:
 def test_poll_interval_at_boundary(tmp_path: Path) -> None:
     """poll_interval = 30 should be accepted (minimum allowed)."""
     p = tmp_path / "config.toml"
-    p.write_text(
-        'github_token = "ghp_abc"\ngithub_username = "user"\npoll_interval = 30\n'
-    )
+    p.write_text('github_token = "ghp_abc"\ngithub_username = "user"\npoll_interval = 30\n')
     cfg = load_config(p)
     assert cfg.poll_interval == 30

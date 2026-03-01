@@ -42,6 +42,7 @@ def _serialize_pr(pr: PullRequest) -> dict[str, Any]:
         "title": pr.title,
         "repo": pr.repo_full_name,
         "author": pr.author,
+        "author_avatar_url": pr.author_avatar_url,
         "number": pr.number,
         "updated_at": pr.updated_at.isoformat(),
         "review_requested": pr.review_requested,
