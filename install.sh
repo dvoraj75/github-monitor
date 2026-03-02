@@ -85,6 +85,18 @@ else
     info "This is normal if you're running via SSH. The service will use D-Bus when started in a desktop session."
 fi
 
+# Optional: System tray indicator prerequisites (GTK3 + AppIndicator3)
+install_indicator=false
+if python3 -c "import gi; gi.require_version('Gtk', '3.0'); gi.require_version('AppIndicator3', '0.1')" 2>/dev/null; then
+    ok "GTK3 + AppIndicator3 (system tray indicator supported)"
+    install_indicator=true
+else
+    warn "GTK3 or AppIndicator3 not found — system tray indicator will not be installed"
+    info "To install indicator support later:"
+    info "  sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-appindicator3-0.1 libcairo2-dev libgirepository1.0-dev"
+    info "  uv sync --extra indicator"
+fi
+
 if [[ "$errors" -gt 0 ]]; then
     echo
     err "Missing $errors required prerequisite(s). Please install them and re-run this script."
@@ -102,7 +114,12 @@ if [[ ! -f "${SCRIPT_DIR}/pyproject.toml" ]]; then
 fi
 
 info "Running: uv tool install . --force"
-uv tool install "${SCRIPT_DIR}" --force
+if [[ "$install_indicator" == true ]]; then
+    info "Including system tray indicator support"
+    uv tool install "${SCRIPT_DIR}" --force --with "gbulb>=0.6"
+else
+    uv tool install "${SCRIPT_DIR}" --force
+fi
 
 # Verify the binary is available
 if command -v github-monitor &>/dev/null; then

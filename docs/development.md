@@ -167,6 +167,11 @@ dependencies = [
     "dbus-next>=0.2.3,<1",
 ]
 
+[project.optional-dependencies]
+indicator = [
+    "gbulb>=0.6",
+]
+
 [dependency-groups]      # PEP 735 — used by uv
 dev = [
     "pytest>=8",
@@ -183,6 +188,37 @@ dev = [
 Dev dependencies use `[dependency-groups]` (PEP 735) rather than
 `[project.optional-dependencies]` because the project uses `uv` as its package
 manager.
+
+### System tray indicator dependencies
+
+The indicator (`github_monitor.indicator`) is optional and requires both Python
+packages and system-level GTK3/AppIndicator3 libraries.
+
+**System packages** (not installable via pip/uv):
+
+```bash
+# Ubuntu / Debian
+sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0 \
+    gir1.2-appindicator3-0.1 libcairo2-dev libgirepository1.0-dev
+
+# Fedora
+sudo dnf install python3-gobject gtk3 libappindicator-gtk3
+```
+
+**Python packages** (installed via the `indicator` optional extra):
+
+```bash
+uv sync --extra indicator
+```
+
+This installs `gbulb` (GLib/asyncio event loop integration) and its transitive
+dependencies (`PyGObject`, `pycairo`). The C build dependencies
+(`libcairo2-dev`, `libgirepository1.0-dev`) must be installed first or the
+build will fail.
+
+Without these, the core daemon works normally — only the system tray indicator
+is unavailable. Running `python -m github_monitor.indicator` will print a clear
+error message listing the missing packages.
 
 ## Coding conventions
 

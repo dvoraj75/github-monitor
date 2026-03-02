@@ -248,6 +248,37 @@ details, and project structure notes.
 Dev-only: `pytest`, `pytest-asyncio`, `pytest-xdist`, `pytest-cov`,
 `aioresponses`, `ruff`, `mypy`, `pre-commit`.
 
+### System tray indicator (optional)
+
+The indicator is a separate process that shows a tray icon with live PR
+count. It connects to the daemon over D-Bus and requires additional
+dependencies:
+
+**Python packages** (installed automatically with `--extra indicator`):
+
+| Package | Purpose |
+|---|---|
+| `gbulb` | GLib/asyncio event loop integration |
+
+**System packages** (must be installed manually via your package manager):
+
+```bash
+# Ubuntu / Debian
+sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0 \
+    gir1.2-appindicator3-0.1 libcairo2-dev libgirepository1.0-dev
+
+# Fedora
+sudo dnf install python3-gobject gtk3 libappindicator-gtk3
+```
+
+Then install with indicator support:
+
+```bash
+uv sync --extra indicator
+```
+
+The core daemon works without any of these — the indicator is fully optional.
+
 ## License
 
 MIT — see [LICENSE](LICENSE) for details.
