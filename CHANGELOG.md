@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0.dev] - Unreleased
+
+### Changed
+
+- Split CI pipeline into two parallel jobs: **Lint & type check** and **Test & audit** for faster feedback
+- Added `uv lock --check` step to verify lockfile stays in sync with `pyproject.toml`
+- Added ShellCheck to lint shell scripts (`install.sh`, `update.sh`, `uninstall.sh`)
+- Added `pip-audit` dependency vulnerability scanning to CI
+
 ## [1.2.1] - 2026-03-03
 
 ### Fixed

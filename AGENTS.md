@@ -71,7 +71,7 @@ indicator/               Separate process -- system tray icon + popup window
 - **Desktop notifications**: `notify-send` (from `libnotify-bin`)
 - **System tray indicator** (optional): GTK3 + AppIndicator3 (system packages) + `gbulb` (GLib/asyncio event loop integration)
 - **Build backend**: `hatchling`
-- **CI**: GitHub Actions (lint, format, type check, tests on push/PR)
+- **CI**: GitHub Actions — two parallel jobs on push/PR to `main`/`develop`: lint & type check (ruff, mypy, ShellCheck, lockfile verification) and test & audit (pytest, pip-audit)
 - **Pre-commit hooks**: ruff + mypy via `pre-commit`
 
 ## Build & Run
