@@ -8,6 +8,7 @@ require review.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import gi
@@ -25,6 +26,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _INDICATOR_ID = "github-monitor-indicator"
+_ICON_DIR = str(Path(__file__).resolve().parent / "resources")
 
 
 class TrayIcon:
@@ -64,6 +66,7 @@ class TrayIcon:
             Icon.DISCONNECTED,
             AppIndicator3.IndicatorCategory.COMMUNICATIONS,
         )
+        self._indicator.set_icon_theme_path(_ICON_DIR)
         self._indicator.set_status(AppIndicator3.IndicatorStatus.ACTIVE)
 
         self._menu, self._show_prs_item = self._build_menu()

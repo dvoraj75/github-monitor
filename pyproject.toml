@@ -49,6 +49,7 @@ Documentation = "https://github.com/dvoraj75/github-monitor/tree/main/docs"
 
 [project.scripts]
 github-monitor = "github_monitor.__main__:main"
+github-monitor-indicator = "github_monitor.indicator.__main__:main"
 
 [dependency-groups]
 dev = [
