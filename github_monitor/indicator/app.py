@@ -15,13 +15,13 @@ from typing import TYPE_CHECKING
 from github_monitor.url_opener import open_url
 
 from .client import DaemonClient
-from .tray import TrayIcon
-from .window import PRWindow
 
 if TYPE_CHECKING:
     from collections.abc import Coroutine
 
     from .models import DaemonStatus, PRInfo
+    from .tray import TrayIcon
+    from .window import PRWindow
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +39,11 @@ class IndicatorApp:
     """
 
     def __init__(self, *, icon_theme: str = "light") -> None:
+        # Lazy imports — tray and window depend on GTK system packages
+        # that are unavailable in headless CI environments.
+        from .tray import TrayIcon  # noqa: PLC0415
+        from .window import PRWindow  # noqa: PLC0415
+
         self._current_prs: list[PRInfo] = []
         self._current_status: DaemonStatus | None = None
         self._shutdown_event = asyncio.Event()
@@ -51,13 +56,13 @@ class IndicatorApp:
             on_prs_changed=self._on_prs_changed,
             on_connection_changed=self._on_connection_changed,
         )
-        self._tray = TrayIcon(
+        self._tray: TrayIcon = TrayIcon(
             on_activate=self._on_activate,
             on_refresh=self._on_refresh,
             on_quit=self._on_quit,
             icon_theme=icon_theme,
         )
-        self._window = PRWindow(
+        self._window: PRWindow = PRWindow(
             on_pr_clicked=self._on_pr_clicked,
             on_refresh=self._on_refresh,
             on_visibility_changed=self._on_window_visibility_changed,

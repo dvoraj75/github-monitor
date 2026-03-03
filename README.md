@@ -40,14 +40,14 @@ notifications when new PRs arrive.
                     │ (notify-  │  │ Interface    │
                     │  send)    │  │              │
                     └───────────┘  └───┬──────────┘
-                                      │
-                              D-Bus session bus
-                                      │
-                              ┌───────▼────────┐
-                              │   Indicator    │
-                              │  (system tray  │
-                              │   + popup)     │
-                              └────────────────┘
+                                       │
+                               D-Bus session bus
+                                       │
+                               ┌───────▼────────┐
+                               │   Indicator    │
+                               │  (system tray  │
+                               │   + popup)     │
+                               └────────────────┘
 The poller queries the GitHub Search API on a configurable interval, the state
 store computes diffs (new / updated / closed PRs), the notifier sends desktop
 notifications for new PRs, and the D-Bus interface lets external tools query

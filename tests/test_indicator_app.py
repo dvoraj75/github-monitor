@@ -2,18 +2,34 @@
 
 The GTK-dependent components (TrayIcon, PRWindow) are mocked at the
 class level so these tests run in CI without system GTK packages.
+
+The ``gi`` module (PyGObject) and its sub-modules are stubbed in
+``sys.modules`` *before* any indicator imports so that ``tray.py`` and
+``window.py`` can be imported in headless environments.
 """
 
 from __future__ import annotations
 
 import asyncio
+import sys
 from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from github_monitor.indicator.models import DaemonStatus, PRInfo
+# ---------------------------------------------------------------------------
+# Stub out GTK / AppIndicator3 so tray.py and window.py are importable
+# in CI where system GTK packages are not installed.
+# ---------------------------------------------------------------------------
+_gi_stub = MagicMock()
+_gi_stub.require_version = MagicMock()
+
+for _mod in ("gi", "gi.repository"):
+    if _mod not in sys.modules:
+        sys.modules[_mod] = _gi_stub  # type: ignore[assignment]
+
+from github_monitor.indicator.models import DaemonStatus, PRInfo  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -51,10 +67,12 @@ def _make_status(pr_count: int = 1) -> DaemonStatus:
 # Fixtures
 # ---------------------------------------------------------------------------
 
-# Patch paths — targeting the names as they appear in app.py's namespace.
+# Patch paths — TrayIcon and PRWindow are lazy-imported inside __init__()
+# from their source modules, so we patch at the source.  The gi module
+# mock (below) ensures the source modules are importable in CI.
 _PATCH_CLIENT = "github_monitor.indicator.app.DaemonClient"
-_PATCH_TRAY = "github_monitor.indicator.app.TrayIcon"
-_PATCH_WINDOW = "github_monitor.indicator.app.PRWindow"
+_PATCH_TRAY = "github_monitor.indicator.tray.TrayIcon"
+_PATCH_WINDOW = "github_monitor.indicator.window.PRWindow"
 _PATCH_OPEN_URL = "github_monitor.indicator.app.open_url"
 
 
