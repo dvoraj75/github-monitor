@@ -151,14 +151,16 @@ Every function must have complete type annotations.
 ```toml
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-addopts = "-ra -v --cov=github_monitor --cov-report=term -n auto"
+addopts = "-ra -v --cov=github_monitor --cov-report=term --cov-fail-under=90 -n auto"
 ```
 
 `asyncio_mode = "auto"` means async test functions are automatically detected
 and run in an event loop -- no need for `@pytest.mark.asyncio` decorators.
 
 Tests run in parallel via `pytest-xdist` (`-n auto`) with coverage reporting
-via `pytest-cov` (`--cov=github_monitor`).
+via `pytest-cov` (`--cov=github_monitor`). The `--cov-fail-under=90` flag
+enforces a minimum 90% test coverage -- pytest will exit with a non-zero code
+if total coverage drops below this threshold.
 
 ## Build system
 
@@ -354,7 +356,8 @@ push and pull request to `main` or `develop`, two jobs run **in parallel**:
 ### Test & audit
 
 1. **Tests** -- `pytest` (parallel via `pytest-xdist`, with coverage)
-2. **Dependency audit** -- `pip-audit` (scans installed packages for known CVEs)
+2. **Coverage gate** -- fails if total coverage drops below 90% (enforced by both `--cov-fail-under` and the PR coverage comment action)
+3. **Dependency audit** -- `pip-audit` (scans installed packages for known CVEs)
 
 Both jobs must pass before merging.
 

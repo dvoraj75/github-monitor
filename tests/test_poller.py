@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from datetime import UTC, datetime
 from typing import Any
+from unittest.mock import AsyncMock, patch
 
 import aiohttp
 import pytest
@@ -511,6 +512,108 @@ class TestCustomMaxRetries:
 
         with aioresponses():
             # No requests should be made (range(0) is empty)
+            prs = await client.fetch_review_requested()
+
+        assert prs == []
+        await client.close()
+
+
+# ---------------------------------------------------------------------------
+# GitHubClient — 403 without Retry-After (non-rate-limit)
+# ---------------------------------------------------------------------------
+
+
+class TestForbiddenNonRateLimit:
+    async def test_403_without_retry_after_returns_empty(self) -> None:
+        """A 403 without Retry-After header should log error and return empty."""
+        client = GitHubClient(token="tok", username="user")
+        await client.start()
+
+        with aioresponses() as m:
+            m.get(SEARCH_URL_RE, status=403, body="Forbidden: abuse detection")
+            prs = await client.fetch_review_requested()
+
+        assert prs == []
+        await client.close()
+
+    async def test_403_without_retry_after_partial_results(self) -> None:
+        """If a 403 hits on page 2, page 1 results are still returned."""
+        client = GitHubClient(token="tok", username="user")
+        await client.start()
+
+        page1_items = [_make_search_item(number=1)]
+        page2_url = f"{SEARCH_URL}?q=test&page=2"
+
+        with aioresponses() as m:
+            m.get(
+                SEARCH_URL_RE,
+                payload=_search_response(page1_items, total_count=2),
+                headers={"Link": f'<{page2_url}>; rel="next"'},
+            )
+            m.get(
+                page2_url,
+                status=403,
+                body="Forbidden: secondary rate limit",
+            )
+            prs = await client.fetch_review_requested()
+
+        assert len(prs) == 1
+        assert prs[0].number == 1
+        await client.close()
+
+
+# ---------------------------------------------------------------------------
+# GitHubClient — rate limit fallback (no reset header)
+# ---------------------------------------------------------------------------
+
+
+class TestRateLimitFallbackWait:
+    async def test_waits_fallback_when_no_reset_header(self) -> None:
+        """When rate limit is low but no reset time is known, sleep 60s fallback."""
+        client = GitHubClient(token="tok", username="user")
+        await client.start()
+
+        # Set rate limit low, but no reset time
+        client._rate_limit_remaining = 1
+        client._rate_limit_reset = None
+
+        with (
+            aioresponses() as m,
+            patch("github_monitor.poller.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+        ):
+            m.get(SEARCH_URL_RE, payload=_search_response([]))
+            await client.fetch_review_requested()
+
+        # Should have slept for the fallback duration (60s)
+        mock_sleep.assert_any_call(60)
+        await client.close()
+
+
+# ---------------------------------------------------------------------------
+# GitHubClient — non-OK status (not 401, 403, or 5xx)
+# ---------------------------------------------------------------------------
+
+
+class TestNonOkStatus:
+    async def test_422_returns_empty(self) -> None:
+        """Unprocessable Entity (422) should log error and return empty."""
+        client = GitHubClient(token="tok", username="user")
+        await client.start()
+
+        with aioresponses() as m:
+            m.get(SEARCH_URL_RE, status=422, body="Validation Failed")
+            prs = await client.fetch_review_requested()
+
+        assert prs == []
+        await client.close()
+
+    async def test_429_returns_empty(self) -> None:
+        """Too Many Requests (429) without special handling returns empty."""
+        client = GitHubClient(token="tok", username="user")
+        await client.start()
+
+        with aioresponses() as m:
+            m.get(SEARCH_URL_RE, status=429, body="Too Many Requests")
             prs = await client.fetch_review_requested()
 
         assert prs == []

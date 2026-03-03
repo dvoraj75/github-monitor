@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
@@ -698,3 +699,165 @@ class TestNotifyCustomUrgency:
 
             args = mock_exec.call_args[0]
             assert "--urgency=normal" in args
+
+
+# ---------------------------------------------------------------------------
+# Tests: _download_avatar — cache behaviour
+# ---------------------------------------------------------------------------
+
+
+class TestDownloadAvatarCacheHit:
+    """_download_avatar should use the in-memory cache on second call."""
+
+    async def test_cache_hit_skips_download(self, tmp_path: Path) -> None:
+        """Calling _download_avatar twice for the same URL should only fetch once."""
+        from github_monitor import notifier
+
+        avatar_url = "https://avatars.githubusercontent.com/u/cache-test-1"
+
+        mock_resp = AsyncMock()
+        mock_resp.status = 200
+        mock_resp.read = AsyncMock(return_value=b"\x89PNG fake data")
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = MagicMock()
+        mock_session.get.return_value = mock_cm
+
+        # Clear caches and redirect cache dir to tmp_path
+        notifier._avatar_cache.clear()
+        with patch.object(notifier, "_AVATAR_CACHE_DIR", tmp_path):
+            result1 = await _download_avatar(avatar_url, mock_session)
+            assert result1 is not None
+
+            # Second call — should hit in-memory cache, no HTTP request
+            result2 = await _download_avatar(avatar_url, mock_session)
+            assert result2 == result1
+
+            # get() was called only once (for the first download)
+            assert mock_session.get.call_count == 1
+
+    async def test_cache_stale_file_redownloads(self, tmp_path: Path) -> None:
+        """If the cached file was deleted from disk, re-download it."""
+        from github_monitor import notifier
+
+        avatar_url = "https://avatars.githubusercontent.com/u/cache-stale-1"
+
+        mock_resp = AsyncMock()
+        mock_resp.status = 200
+        mock_resp.read = AsyncMock(return_value=b"\x89PNG fake data")
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = MagicMock()
+        mock_session.get.return_value = mock_cm
+
+        notifier._avatar_cache.clear()
+        with patch.object(notifier, "_AVATAR_CACHE_DIR", tmp_path):
+            result1 = await _download_avatar(avatar_url, mock_session)
+            assert result1 is not None
+
+            # Delete the file from disk to simulate cache staleness
+            Path(result1).unlink()  # noqa: ASYNC240
+
+            # Second call — stale cache entry triggers re-download
+            result2 = await _download_avatar(avatar_url, mock_session)
+            assert result2 is not None
+            assert mock_session.get.call_count == 2
+
+
+class TestDownloadAvatarDiskCache:
+    """_download_avatar should reuse files on disk from previous runs."""
+
+    async def test_disk_cache_hit(self, tmp_path: Path) -> None:
+        """File exists on disk (from a previous daemon run) — reuse without HTTP."""
+        import hashlib
+
+        from github_monitor import notifier
+
+        avatar_url = "https://avatars.githubusercontent.com/u/disk-cache-1"
+        url_hash = hashlib.md5(avatar_url.encode()).hexdigest()  # noqa: S324
+        cached_file = tmp_path / f"{url_hash}.png"
+        cached_file.write_bytes(b"\x89PNG old data")
+
+        mock_session = MagicMock()
+
+        notifier._avatar_cache.clear()
+        with patch.object(notifier, "_AVATAR_CACHE_DIR", tmp_path):
+            result = await _download_avatar(avatar_url, mock_session)
+
+        assert result == str(cached_file)
+        # No HTTP call should have been made
+        mock_session.get.assert_not_called()
+
+    async def test_write_failure_returns_none(self, tmp_path: Path) -> None:
+        """If writing avatar bytes to disk fails, return None."""
+        from github_monitor import notifier
+
+        avatar_url = "https://avatars.githubusercontent.com/u/write-fail-1"
+
+        mock_resp = AsyncMock()
+        mock_resp.status = 200
+        mock_resp.read = AsyncMock(return_value=b"\x89PNG fake data")
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = MagicMock()
+        mock_session.get.return_value = mock_cm
+
+        notifier._avatar_cache.clear()
+        with (
+            patch.object(notifier, "_AVATAR_CACHE_DIR", tmp_path),
+            patch("pathlib.Path.write_bytes", side_effect=OSError("disk full")),
+        ):
+            result = await _download_avatar(avatar_url, mock_session)
+
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Tests: _send_notification — background task for URL
+# ---------------------------------------------------------------------------
+
+
+class TestSendNotificationBackgroundTask:
+    """_send_notification with url should spawn _wait_and_open as a background task."""
+
+    async def test_url_creates_background_task(self) -> None:
+        proc = _mock_process(stdout=b"open\n")
+
+        with (
+            patch(
+                "github_monitor.notifier.asyncio.create_subprocess_exec",
+                return_value=proc,
+            ),
+            patch("github_monitor.notifier._wait_and_open", new_callable=AsyncMock) as mock_wait,
+            patch("github_monitor.notifier.asyncio.create_task") as mock_create_task,
+        ):
+            await _send_notification("title", "body", url="https://example.com/pr/1")
+
+            # _wait_and_open should have been called (via create_task)
+            mock_wait.assert_called_once_with(proc, "https://example.com/pr/1")
+            mock_create_task.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Tests: _wait_and_open — ValueError exception
+# ---------------------------------------------------------------------------
+
+
+class TestWaitAndOpenValueError:
+    """_wait_and_open should catch ValueError without propagating."""
+
+    async def test_value_error_does_not_propagate(self) -> None:
+        proc = AsyncMock()
+        proc.communicate.side_effect = ValueError("decode error")
+
+        # Should not raise
+        await _wait_and_open(proc, "https://github.com/owner/repo/pull/1")

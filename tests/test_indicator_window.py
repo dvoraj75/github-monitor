@@ -1,16 +1,19 @@
-"""Tests for the pure helper functions in _window_helpers.py.
+"""Tests for _window_helpers.py helpers, PRWindow GTK widget, and models.
 
-The PRWindow class itself depends on GTK system packages and is tested
-manually.  These tests cover the logic that lives in _window_helpers.py,
-which is deliberately free of GTK imports.
+The pure helper functions are tested directly.  The ``PRWindow`` class
+depends on GTK system packages, so its tests stub out ``gi`` /
+``gi.repository`` in ``sys.modules`` before importing ``window.py``.
 """
 
 from __future__ import annotations
 
+import dataclasses
+import sys
 from datetime import UTC, datetime, timedelta
+from unittest.mock import MagicMock, patch
 
 from github_monitor.indicator._window_helpers import escape_markup, relative_time, sort_prs, status_text
-from github_monitor.indicator.models import PRInfo
+from github_monitor.indicator.models import DaemonStatus, PRInfo
 
 # ---------------------------------------------------------------------------
 # Test helper
@@ -244,3 +247,317 @@ class TestEscapeMarkup:
     def test_repo_name_with_no_special_chars(self) -> None:
         """Typical repo name should pass through unchanged."""
         assert escape_markup("owner/repo") == "owner/repo"
+
+
+# ---------------------------------------------------------------------------
+# Frozen dataclass models: PRInfo and DaemonStatus
+# ---------------------------------------------------------------------------
+
+
+class TestPRInfoModel:
+    """PRInfo frozen dataclass properties."""
+
+    def test_fields_accessible(self) -> None:
+        pr = _make_pr(title="My PR", number=42, author="bob")
+        assert pr.title == "My PR"
+        assert pr.number == 42
+        assert pr.author == "bob"
+
+    def test_frozen_raises_on_assignment(self) -> None:
+        pr = _make_pr()
+        try:
+            pr.title = "changed"  # type: ignore[misc]
+            msg = "Expected FrozenInstanceError"
+            raise AssertionError(msg)
+        except dataclasses.FrozenInstanceError:
+            pass
+
+    def test_equality(self) -> None:
+        pr_a = _make_pr(number=1, title="Same")
+        pr_b = _make_pr(number=1, title="Same")
+        assert pr_a == pr_b
+
+    def test_inequality(self) -> None:
+        pr_a = _make_pr(number=1)
+        pr_b = _make_pr(number=2)
+        assert pr_a != pr_b
+
+
+class TestDaemonStatusModel:
+    """DaemonStatus frozen dataclass properties."""
+
+    def test_fields_accessible(self) -> None:
+        status = DaemonStatus(pr_count=5, last_updated=_NOW)
+        assert status.pr_count == 5
+        assert status.last_updated == _NOW
+
+    def test_last_updated_none(self) -> None:
+        status = DaemonStatus(pr_count=0, last_updated=None)
+        assert status.last_updated is None
+
+    def test_frozen_raises_on_assignment(self) -> None:
+        status = DaemonStatus(pr_count=3, last_updated=None)
+        try:
+            status.pr_count = 10  # type: ignore[misc]
+            msg = "Expected FrozenInstanceError"
+            raise AssertionError(msg)
+        except dataclasses.FrozenInstanceError:
+            pass
+
+    def test_equality(self) -> None:
+        a = DaemonStatus(pr_count=2, last_updated=_NOW)
+        b = DaemonStatus(pr_count=2, last_updated=_NOW)
+        assert a == b
+
+
+# ---------------------------------------------------------------------------
+# Stub out GTK / Gdk / Pango so window.py is importable in CI
+# ---------------------------------------------------------------------------
+
+_gi_stub = MagicMock()
+_gi_stub.require_version = MagicMock()
+
+for _mod in ("gi", "gi.repository"):
+    if _mod not in sys.modules:
+        sys.modules[_mod] = _gi_stub  # type: ignore[assignment]
+
+from github_monitor.indicator.window import PRWindow  # noqa: E402
+
+# ---------------------------------------------------------------------------
+# PRWindow — construction
+# ---------------------------------------------------------------------------
+
+
+class TestPRWindowConstruction:
+    """PRWindow builds the GTK window and internal widgets."""
+
+    def test_creates_window_with_callbacks(self) -> None:
+        on_pr_clicked = MagicMock()
+        on_refresh = MagicMock()
+        on_visibility = MagicMock()
+
+        win = PRWindow(on_pr_clicked, on_refresh, on_visibility_changed=on_visibility)
+
+        assert win._on_pr_clicked is on_pr_clicked
+        assert win._on_refresh is on_refresh
+        assert win._on_visibility_changed is on_visibility
+
+    def test_initial_state_not_visible(self) -> None:
+        win = PRWindow(MagicMock(), MagicMock())
+
+        assert win.visible is False
+
+    def test_row_urls_initially_empty(self) -> None:
+        win = PRWindow(MagicMock(), MagicMock())
+
+        assert win._row_urls == {}
+
+    def test_visibility_changed_callback_optional(self) -> None:
+        win = PRWindow(MagicMock(), MagicMock())
+
+        assert win._on_visibility_changed is None
+
+
+# ---------------------------------------------------------------------------
+# PRWindow — update_prs
+# ---------------------------------------------------------------------------
+
+
+class TestPRWindowUpdatePrs:
+    """update_prs rebuilds rows and updates footer."""
+
+    def test_populates_row_urls(self) -> None:
+        win = PRWindow(MagicMock(), MagicMock())
+        prs = [
+            _make_pr(number=1, url="https://github.com/o/r/pull/1"),
+            _make_pr(number=2, url="https://github.com/o/r/pull/2"),
+        ]
+        status = DaemonStatus(pr_count=2, last_updated=_NOW)
+
+        win.update_prs(prs, status)
+
+        assert len(win._row_urls) == 2
+        # URLs should be present (order may differ due to sorting)
+        assert set(win._row_urls.values()) == {
+            "https://github.com/o/r/pull/1",
+            "https://github.com/o/r/pull/2",
+        }
+
+    def test_empty_prs_clears_row_urls(self) -> None:
+        win = PRWindow(MagicMock(), MagicMock())
+        # Populate first
+        prs = [_make_pr(number=1)]
+        win.update_prs(prs, DaemonStatus(pr_count=1, last_updated=_NOW))
+        assert len(win._row_urls) == 1
+
+        # Now update with empty
+        win.update_prs([], DaemonStatus(pr_count=0, last_updated=_NOW))
+        assert win._row_urls == {}
+
+    def test_updates_footer_text(self) -> None:
+        win = PRWindow(MagicMock(), MagicMock())
+        status = DaemonStatus(pr_count=3, last_updated=None)
+
+        win.update_prs([_make_pr(number=i) for i in range(3)], status)
+
+        win._footer.set_text.assert_called()
+
+    def test_status_none_uses_prs_length_for_count(self) -> None:
+        win = PRWindow(MagicMock(), MagicMock())
+        prs = [_make_pr(number=1), _make_pr(number=2)]
+
+        win.update_prs(prs, None)
+
+        # Footer should have been set with count=2
+        win._footer.set_text.assert_called()
+
+
+# ---------------------------------------------------------------------------
+# PRWindow — show / hide / toggle
+# ---------------------------------------------------------------------------
+
+
+class TestPRWindowVisibility:
+    """show(), hide(), toggle() manage window visibility."""
+
+    def test_show_sets_visible(self) -> None:
+        win = PRWindow(MagicMock(), MagicMock())
+
+        with patch.object(win, "_position_near_pointer"):
+            win.show()
+
+        assert win.visible is True
+
+    def test_hide_clears_visible(self) -> None:
+        win = PRWindow(MagicMock(), MagicMock())
+        with patch.object(win, "_position_near_pointer"):
+            win.show()
+
+        win.hide()
+
+        assert win.visible is False
+
+    def test_toggle_from_hidden_to_visible(self) -> None:
+        win = PRWindow(MagicMock(), MagicMock())
+        assert win.visible is False
+
+        with patch.object(win, "_position_near_pointer"):
+            win.toggle()
+
+        assert win.visible is True
+
+    def test_toggle_from_visible_to_hidden(self) -> None:
+        win = PRWindow(MagicMock(), MagicMock())
+        with patch.object(win, "_position_near_pointer"):
+            win.show()
+        assert win.visible is True
+
+        win.toggle()
+
+        assert win.visible is False
+
+    def test_show_calls_visibility_changed_callback(self) -> None:
+        cb = MagicMock()
+        win = PRWindow(MagicMock(), MagicMock(), on_visibility_changed=cb)
+
+        with patch.object(win, "_position_near_pointer"):
+            win.show()
+
+        cb.assert_called_with(True)  # noqa: FBT003
+
+    def test_hide_calls_visibility_changed_callback(self) -> None:
+        cb = MagicMock()
+        win = PRWindow(MagicMock(), MagicMock(), on_visibility_changed=cb)
+        with patch.object(win, "_position_near_pointer"):
+            win.show()
+        cb.reset_mock()
+
+        win.hide()
+
+        cb.assert_called_with(False)  # noqa: FBT003
+
+    def test_no_callback_when_none(self) -> None:
+        """When on_visibility_changed is None, show/hide should not error."""
+        win = PRWindow(MagicMock(), MagicMock(), on_visibility_changed=None)
+
+        with patch.object(win, "_position_near_pointer"):
+            win.show()
+        win.hide()
+
+        assert win.visible is False
+
+
+# ---------------------------------------------------------------------------
+# PRWindow — set_disconnected
+# ---------------------------------------------------------------------------
+
+
+class TestPRWindowSetDisconnected:
+    """set_disconnected shows a 'not running' message."""
+
+    def test_clears_row_urls(self) -> None:
+        win = PRWindow(MagicMock(), MagicMock())
+        win._row_urls = {0: "https://example.com"}
+
+        win.set_disconnected()
+
+        assert win._row_urls == {}
+
+    def test_clears_footer(self) -> None:
+        win = PRWindow(MagicMock(), MagicMock())
+
+        win.set_disconnected()
+
+        win._footer.set_text.assert_called_with("")
+
+
+# ---------------------------------------------------------------------------
+# PRWindow — event handlers
+# ---------------------------------------------------------------------------
+
+
+class TestPRWindowEventHandlers:
+    """Internal event handlers delegate to callbacks."""
+
+    def test_row_activated_calls_on_pr_clicked(self) -> None:
+        on_pr_clicked = MagicMock()
+        win = PRWindow(on_pr_clicked, MagicMock())
+        win._row_urls = {0: "https://github.com/o/r/pull/1"}
+
+        mock_row = MagicMock()
+        mock_row.get_index.return_value = 0
+
+        win._on_row_activated(MagicMock(), mock_row)
+
+        on_pr_clicked.assert_called_once_with("https://github.com/o/r/pull/1")
+
+    def test_row_activated_ignores_unknown_index(self) -> None:
+        on_pr_clicked = MagicMock()
+        win = PRWindow(on_pr_clicked, MagicMock())
+        win._row_urls = {}
+
+        mock_row = MagicMock()
+        mock_row.get_index.return_value = 99
+
+        win._on_row_activated(MagicMock(), mock_row)
+
+        on_pr_clicked.assert_not_called()
+
+    def test_refresh_clicked_calls_on_refresh(self) -> None:
+        on_refresh = MagicMock()
+        win = PRWindow(MagicMock(), on_refresh)
+
+        win._on_refresh_clicked(MagicMock())
+
+        on_refresh.assert_called_once()
+
+    def test_focus_out_hides_window(self) -> None:
+        win = PRWindow(MagicMock(), MagicMock())
+        with patch.object(win, "_position_near_pointer"):
+            win.show()
+        assert win.visible is True
+
+        result = win._on_focus_out(MagicMock(), MagicMock())
+
+        assert win.visible is False
+        assert result is False

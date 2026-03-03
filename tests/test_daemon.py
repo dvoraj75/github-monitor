@@ -583,6 +583,26 @@ class TestPollLoop:
 
         assert poll_count == 1
 
+    async def test_timeout_continues_to_next_poll(self) -> None:
+        """TimeoutError from wait_for triggers continue → next poll cycle."""
+        daemon = Daemon(_make_config(poll_interval=0))  # 0s interval → immediate timeout
+        poll_count = 0
+
+        async def counting_poll_then_stop() -> None:
+            nonlocal poll_count
+            poll_count += 1
+            if poll_count >= 3:
+                daemon._handle_shutdown()
+
+        daemon._running = True
+        daemon._poll_once = counting_poll_then_stop  # type: ignore[method-assign]
+
+        await asyncio.wait_for(daemon._poll_loop(), timeout=2.0)
+
+        # Should have polled 3 times: first two via TimeoutError → continue,
+        # third poll sets shutdown event → break
+        assert poll_count == 3
+
 
 # ---------------------------------------------------------------------------
 # Tests: second poll notification behaviour

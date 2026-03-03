@@ -113,4 +113,4 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-addopts="-ra -v --cov=github_monitor --cov-report=term -n auto"
+addopts="-ra -v --cov=github_monitor --cov-report=term --cov-fail-under=90 -n auto"

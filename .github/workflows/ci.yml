@@ -27,7 +27,7 @@ jobs:
         run: uv lock --check
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --locked
 
       - name: Lint
         run: uv run ruff check .
@@ -48,6 +48,9 @@ jobs:
   test:
     name: Test & audit
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v6
 
@@ -58,10 +61,17 @@ jobs:
         run: uv python install 3.13
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --locked --dev
 
       - name: Test
-        run: uv run pytest
+        run: uv run pytest --cov-report=xml
+
+      - name: Pytest coverage comment
+        uses: orgoro/coverage@v3.2
+        with:
+          coverageFile: coverage.xml
+          token: ${{ secrets.GITHUB_TOKEN }}
+          thresholdAll: 0.9
 
       - name: Dependency audit
         run: uv run pip-audit

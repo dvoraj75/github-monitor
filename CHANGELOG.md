@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `uv lock --check` step to verify lockfile stays in sync with `pyproject.toml`
 - Added ShellCheck to lint shell scripts (`install.sh`, `update.sh`, `uninstall.sh`)
 - Added `pip-audit` dependency vulnerability scanning to CI
+- Pinned CI dependencies with `uv sync --locked` to ensure reproducible builds
+- Enforced minimum 90% test coverage gate via `--cov-fail-under=90` (locally and in CI)
+- Added PR coverage comment via `orgoro/coverage` action with 90% threshold
 
 ## [1.2.1] - 2026-03-03
 
