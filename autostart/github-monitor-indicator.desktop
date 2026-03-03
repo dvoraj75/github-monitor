@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=GitHub Monitor Indicator
+Comment=System tray indicator for GitHub PR monitoring
+Exec=github-monitor-indicator
+Icon=github-monitor
+Terminal=false
+Categories=Development;
+StartupNotify=false
+X-GNOME-Autostart-enabled=true

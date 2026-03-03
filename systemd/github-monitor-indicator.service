@@ -1,0 +1,19 @@
+[Unit]
+Description=GitHub PR Monitor - Panel Indicator
+After=graphical-session.target github-monitor.service
+Wants=github-monitor.service
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/github-monitor-indicator
+Restart=on-failure
+RestartSec=10
+
+# Security hardening (lighter than daemon — no file writes needed)
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+
+[Install]
+WantedBy=graphical-session.target
