@@ -13,13 +13,18 @@ uv sync
 ## Running checks
 
 ```bash
-uv run pytest                  # tests (ALL passing)
+uv lock --check                # verify lockfile matches pyproject.toml
 uv run ruff check .            # lint
 uv run ruff format --check .   # format check
 uv run mypy github_monitor     # type check
+uv run pytest                  # tests (ALL passing)
+uv run pip-audit               # dependency vulnerability scan
 ```
 
-All four must pass before a PR will be merged.
+If you modify shell scripts (`install.sh`, `update.sh`, `uninstall.sh`), also
+run [ShellCheck](https://www.shellcheck.net/): `shellcheck *.sh`
+
+All checks must pass before a PR will be merged (CI runs them automatically).
 
 ## Code style
 
@@ -33,5 +38,5 @@ All four must pass before a PR will be merged.
 
 1. Fork the repo and create a feature branch
 2. Make your changes
-3. Ensure all checks pass (`pytest`, `ruff check`, `ruff format --check`, `mypy`)
+3. Ensure all checks pass (see "Running checks" above)
 4. Open a PR with a clear description of the change
