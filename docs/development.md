@@ -341,14 +341,22 @@ by pytest-asyncio (no decorator needed).
 ## Continuous integration
 
 The project uses GitHub Actions for CI (`.github/workflows/ci.yml`). On every
-push and pull request to `main`, the following checks run:
+push and pull request to `main` or `develop`, two jobs run **in parallel**:
 
-1. **Lint** -- `ruff check .`
-2. **Format** -- `ruff format --check .`
-3. **Type check** -- `mypy .`
-4. **Tests** -- `pytest`
+### Lint & type check
 
-All checks must pass before merging.
+1. **Lockfile verification** -- `uv lock --check` (ensures `uv.lock` matches `pyproject.toml`)
+2. **Lint** -- `ruff check .`
+3. **Format** -- `ruff format --check .`
+4. **Type check** -- `mypy github_monitor`
+5. **ShellCheck** -- lints all `.sh` scripts (`install.sh`, `update.sh`, `uninstall.sh`)
+
+### Test & audit
+
+1. **Tests** -- `pytest` (parallel via `pytest-xdist`, with coverage)
+2. **Dependency audit** -- `pip-audit` (scans installed packages for known CVEs)
+
+Both jobs must pass before merging.
 
 ## Pre-commit hooks
 
