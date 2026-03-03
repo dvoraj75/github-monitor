@@ -249,10 +249,15 @@ class DaemonClient:
         if self._reconnect_handle is not None:
             return  # already scheduled
         loop = asyncio.get_running_loop()
-        self._reconnect_handle = loop.call_later(
-            _RECONNECT_INTERVAL_S,
-            lambda: asyncio.ensure_future(self.connect()),
-        )
+
+        def _fire() -> None:
+            # Clear the handle *before* attempting to reconnect so that
+            # a failed connect() -> _set_disconnected() -> _schedule_reconnect()
+            # chain can schedule a fresh timer instead of bailing out.
+            self._reconnect_handle = None
+            asyncio.ensure_future(self.connect())  # noqa: RUF006
+
+        self._reconnect_handle = loop.call_later(_RECONNECT_INTERVAL_S, _fire)
         logger.debug("Reconnect scheduled in %ds", _RECONNECT_INTERVAL_S)
 
     def _cancel_reconnect(self) -> None:

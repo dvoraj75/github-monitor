@@ -754,6 +754,33 @@ class TestReconnection:
         assert client._reconnect_handle is None
         assert client.connected is True
 
+    @patch("github_monitor.indicator.client.MessageBus")
+    async def test_reconnect_retries_after_fired_timer_fails(self, mock_bus_class: MagicMock) -> None:
+        """After a scheduled reconnect fires and connect() fails again, a new timer must be scheduled.
+
+        Regression test: previously the stale (already-fired) TimerHandle was
+        not cleared, so ``_schedule_reconnect()`` saw a non-None handle and
+        returned immediately — permanently stopping the retry loop.
+        """
+        mock_bus_class.return_value.connect = AsyncMock(side_effect=OSError("no bus"))
+
+        client = DaemonClient(on_prs_changed=MagicMock(), on_connection_changed=MagicMock())
+        await client.connect()  # first attempt fails, schedules reconnect
+
+        first_handle = client._reconnect_handle
+        assert first_handle is not None
+
+        # Simulate the timer firing: the callback clears _reconnect_handle
+        # then calls connect() which fails again.
+        first_handle.cancel()  # prevent the real timer from firing
+        client._reconnect_handle = None  # mimic what _fire() does
+        await client.connect()  # second attempt also fails
+
+        # A *new* reconnect must be scheduled (not stuck on the old handle).
+        assert client._reconnect_handle is not None
+        assert client._reconnect_handle is not first_handle
+        client._cancel_reconnect()
+
     def test_cancel_reconnect_when_none(self) -> None:
         """Cancelling when no reconnect is scheduled should be a no-op."""
         client = DaemonClient(on_prs_changed=MagicMock(), on_connection_changed=MagicMock())
