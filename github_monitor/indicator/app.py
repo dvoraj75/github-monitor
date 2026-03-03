@@ -59,6 +59,7 @@ class IndicatorApp:
         self._window = PRWindow(
             on_pr_clicked=self._on_pr_clicked,
             on_refresh=self._on_refresh,
+            on_visibility_changed=self._on_window_visibility_changed,
         )
 
     # -- public lifecycle ----------------------------------------------------
@@ -123,6 +124,10 @@ class IndicatorApp:
         """Toggle the popup window visibility (tray 'Show PRs' click)."""
         self._window.toggle()
 
+    def _on_window_visibility_changed(self, visible: bool) -> None:  # noqa: FBT001
+        """Update the tray menu label when the window is shown or hidden."""
+        self._tray.set_window_visible(visible=visible)
+
     def _on_refresh(self) -> None:
         """Trigger a daemon refresh (tray or window refresh button)."""
         if not self._client.connected:
@@ -143,16 +148,8 @@ class IndicatorApp:
 
     async def _handle_prs_changed(self, prs: list[PRInfo]) -> None:
         """Update tray and window after receiving new PR data."""
-        try:
-            status = await self._client.get_status()
-            self._current_status = status
-        except Exception:  # noqa: BLE001
-            logger.debug("Failed to fetch status after PR change", exc_info=True)
-            status = self._current_status
-
-        has_review = any(pr.review_requested for pr in prs)
-        self._tray.set_pr_count(len(prs), has_review_requested=has_review)
-        self._window.update_prs(prs, status)
+        status = await self._fetch_status()
+        self._update_ui(prs, status)
 
     async def _handle_connected(self) -> None:
         """Fetch initial state after (re)connecting to the daemon."""
@@ -167,17 +164,8 @@ class IndicatorApp:
             return
 
         self._current_prs = prs
-
-        try:
-            status = await self._client.get_status()
-            self._current_status = status
-        except Exception:  # noqa: BLE001
-            logger.debug("Failed to fetch status after refresh", exc_info=True)
-            status = self._current_status
-
-        has_review = any(pr.review_requested for pr in prs)
-        self._tray.set_pr_count(len(prs), has_review_requested=has_review)
-        self._window.update_prs(prs, status)
+        status = await self._fetch_status()
+        self._update_ui(prs, status)
 
     async def _handle_open_url(self, url: str) -> None:
         """Open a URL in the default browser."""
@@ -197,14 +185,21 @@ class IndicatorApp:
             return
 
         self._current_prs = prs
+        status = await self._fetch_status()
+        self._update_ui(prs, status)
 
+    async def _fetch_status(self) -> DaemonStatus | None:
+        """Fetch daemon status, falling back to the cached value on error."""
         try:
             status = await self._client.get_status()
             self._current_status = status
         except Exception:  # noqa: BLE001
-            logger.debug("Failed to fetch initial status", exc_info=True)
+            logger.debug("Failed to fetch daemon status", exc_info=True)
             status = self._current_status
+        return status
 
+    def _update_ui(self, prs: list[PRInfo], status: DaemonStatus | None) -> None:
+        """Push PR data to the tray icon and popup window."""
         has_review = any(pr.review_requested for pr in prs)
         self._tray.set_pr_count(len(prs), has_review_requested=has_review)
         self._window.update_prs(prs, status)

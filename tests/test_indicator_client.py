@@ -354,6 +354,24 @@ class TestGetPullRequests:
         with pytest.raises(ConnectionError, match="Not connected"):
             await client.get_pull_requests()
 
+    @patch("github_monitor.indicator.client.MessageBus")
+    async def test_eoferror_returns_empty_and_disconnects(self, mock_bus_class: MagicMock) -> None:
+        """EOFError during get_pull_requests is caught and triggers disconnect."""
+        bus, _proxy, interface = _make_mock_bus()
+        mock_bus_class.return_value.connect = AsyncMock(return_value=bus)
+        interface.call_get_pull_requests = AsyncMock(side_effect=EOFError)
+
+        on_conn = MagicMock()
+        client = DaemonClient(on_prs_changed=MagicMock(), on_connection_changed=on_conn)
+        await client.connect()
+        on_conn.reset_mock()
+
+        result = await client.get_pull_requests()
+
+        assert result == []
+        assert client.connected is False
+        client._cancel_reconnect()
+
 
 # ---------------------------------------------------------------------------
 # DaemonClient — get_status
@@ -397,6 +415,30 @@ class TestGetStatus:
         assert client.connected is False
         client._cancel_reconnect()
 
+    async def test_not_connected_raises(self) -> None:
+        """get_status on a never-connected client raises ConnectionError."""
+        client = DaemonClient(on_prs_changed=MagicMock(), on_connection_changed=MagicMock())
+        with pytest.raises(ConnectionError, match="Not connected"):
+            await client.get_status()
+
+    @patch("github_monitor.indicator.client.MessageBus")
+    async def test_eoferror_returns_none_and_disconnects(self, mock_bus_class: MagicMock) -> None:
+        """EOFError during get_status is caught and triggers disconnect."""
+        bus, _proxy, interface = _make_mock_bus()
+        mock_bus_class.return_value.connect = AsyncMock(return_value=bus)
+        interface.call_get_status = AsyncMock(side_effect=EOFError)
+
+        on_conn = MagicMock()
+        client = DaemonClient(on_prs_changed=MagicMock(), on_connection_changed=on_conn)
+        await client.connect()
+        on_conn.reset_mock()
+
+        result = await client.get_status()
+
+        assert result is None
+        assert client.connected is False
+        client._cancel_reconnect()
+
 
 # ---------------------------------------------------------------------------
 # DaemonClient — refresh
@@ -425,6 +467,30 @@ class TestRefresh:
         bus, _proxy, interface = _make_mock_bus()
         mock_bus_class.return_value.connect = AsyncMock(return_value=bus)
         interface.call_refresh = AsyncMock(side_effect=OSError("broken pipe"))
+
+        on_conn = MagicMock()
+        client = DaemonClient(on_prs_changed=MagicMock(), on_connection_changed=on_conn)
+        await client.connect()
+        on_conn.reset_mock()
+
+        result = await client.refresh()
+
+        assert result == []
+        assert client.connected is False
+        client._cancel_reconnect()
+
+    async def test_not_connected_raises(self) -> None:
+        """refresh on a never-connected client raises ConnectionError."""
+        client = DaemonClient(on_prs_changed=MagicMock(), on_connection_changed=MagicMock())
+        with pytest.raises(ConnectionError, match="Not connected"):
+            await client.refresh()
+
+    @patch("github_monitor.indicator.client.MessageBus")
+    async def test_eoferror_returns_empty_and_disconnects(self, mock_bus_class: MagicMock) -> None:
+        """EOFError during refresh is caught and triggers disconnect."""
+        bus, _proxy, interface = _make_mock_bus()
+        mock_bus_class.return_value.connect = AsyncMock(return_value=bus)
+        interface.call_refresh = AsyncMock(side_effect=EOFError)
 
         on_conn = MagicMock()
         client = DaemonClient(on_prs_changed=MagicMock(), on_connection_changed=on_conn)
@@ -576,6 +642,56 @@ class TestNameOwnerChanged:
 
         message_handler(msg)
 
+        assert client.connected is True
+        on_conn.assert_not_called()
+
+    @patch("github_monitor.indicator.client.MessageBus")
+    async def test_message_with_body_none_ignored(self, mock_bus_class: MagicMock) -> None:
+        """NameOwnerChanged signal with body=None should be safely ignored."""
+        bus, _proxy, _interface = _make_mock_bus()
+        mock_bus_class.return_value.connect = AsyncMock(return_value=bus)
+
+        on_conn = MagicMock()
+        client = DaemonClient(on_prs_changed=MagicMock(), on_connection_changed=on_conn)
+        await client.connect()
+        on_conn.reset_mock()
+
+        message_handler = bus.add_message_handler.call_args[0][0]
+
+        msg = MagicMock()
+        msg.message_type = MessageType.SIGNAL
+        msg.member = "NameOwnerChanged"
+        msg.interface = "org.freedesktop.DBus"
+        msg.body = None
+
+        result = message_handler(msg)
+
+        assert result is False
+        assert client.connected is True
+        on_conn.assert_not_called()
+
+    @patch("github_monitor.indicator.client.MessageBus")
+    async def test_message_with_short_body_ignored(self, mock_bus_class: MagicMock) -> None:
+        """NameOwnerChanged signal with body shorter than 3 elements should be ignored."""
+        bus, _proxy, _interface = _make_mock_bus()
+        mock_bus_class.return_value.connect = AsyncMock(return_value=bus)
+
+        on_conn = MagicMock()
+        client = DaemonClient(on_prs_changed=MagicMock(), on_connection_changed=on_conn)
+        await client.connect()
+        on_conn.reset_mock()
+
+        message_handler = bus.add_message_handler.call_args[0][0]
+
+        msg = MagicMock()
+        msg.message_type = MessageType.SIGNAL
+        msg.member = "NameOwnerChanged"
+        msg.interface = "org.freedesktop.DBus"
+        msg.body = [BUS_NAME]  # only 1 element, not 3
+
+        result = message_handler(msg)
+
+        assert result is False
         assert client.connected is True
         on_conn.assert_not_called()
 

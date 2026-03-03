@@ -7,6 +7,7 @@
 #   2. Pulls the latest code from the remote repository
 #   3. Re-installs the github-monitor package via uv tool install
 #   4. Updates the systemd service file and restarts the service
+#   5. Updates the system tray indicator autostart (if installed)
 #
 # Your configuration (~/.config/github-monitor/config.toml) is never touched.
 # Safe to re-run (idempotent).
@@ -29,7 +30,7 @@ warn()  { echo -e "${YELLOW}WARNING${NC} $*"; }
 err()   { echo -e "${RED}ERROR${NC} $*" >&2; }
 step()  { echo -e "\n${BOLD}[$1/$TOTAL_STEPS] $2${NC}"; }
 
-TOTAL_STEPS=4
+TOTAL_STEPS=5
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SYSTEMD_USER_DIR="${HOME}/.config/systemd/user"
@@ -77,6 +78,12 @@ if [[ "$errors" -gt 0 ]]; then
     echo
     err "Missing $errors required prerequisite(s). Please install them and re-run this script."
     exit 1
+fi
+
+# Check for indicator support (GTK3 + AppIndicator3)
+install_indicator=false
+if python3 -c "import gi; gi.require_version('Gtk', '3.0'); gi.require_version('AppIndicator3', '0.1')" 2>/dev/null; then
+    install_indicator=true
 fi
 
 # --- Step 2: Pull latest code -----------------------------------------------
@@ -143,7 +150,11 @@ fi
 step 3 "Installing updated package"
 
 info "Running: uv tool install . --force"
-uv tool install "${SCRIPT_DIR}" --force
+if [[ "$install_indicator" == true ]]; then
+    uv tool install "${SCRIPT_DIR}" --force --with "gbulb>=0.6"
+else
+    uv tool install "${SCRIPT_DIR}" --force
+fi
 
 # Verify the binary is available
 if command -v github-monitor &>/dev/null; then
@@ -187,6 +198,30 @@ else
     fi
 fi
 
+# --- Step 5: Update indicator autostart (if installed) -----------------------
+
+step 5 "Updating system tray indicator"
+
+AUTOSTART_DIR="${HOME}/.config/autostart"
+AUTOSTART_SRC="${SCRIPT_DIR}/autostart/github-monitor-indicator.desktop"
+AUTOSTART_DST="${AUTOSTART_DIR}/github-monitor-indicator.desktop"
+
+if [[ -f "${AUTOSTART_DST}" ]]; then
+    # Indicator autostart is currently installed — update it
+    if [[ -f "${AUTOSTART_SRC}" ]]; then
+        cp "${AUTOSTART_SRC}" "${AUTOSTART_DST}"
+        ok "Indicator autostart updated at ${AUTOSTART_DST}"
+    else
+        warn "Autostart source file not found: ${AUTOSTART_SRC}"
+    fi
+elif [[ "$install_indicator" == true ]]; then
+    info "Indicator autostart not currently installed."
+    info "To install it, re-run ./install.sh or copy manually:"
+    info "  cp ${AUTOSTART_SRC} ${AUTOSTART_DST}"
+else
+    info "Indicator not available (missing GTK3/AppIndicator3 system packages)."
+fi
+
 # --- Summary ------------------------------------------------------------------
 
 echo
@@ -196,6 +231,9 @@ echo -e "${BOLD}============================================${NC}"
 echo
 echo -e "  Version: ${BOLD}${new_version}${NC}"
 echo -e "  Binary:  $(command -v github-monitor 2>/dev/null || echo "${HOME}/.local/bin/github-monitor")"
+if [[ -f "${AUTOSTART_DST}" ]]; then
+    echo -e "  Indicator: ${AUTOSTART_DST}"
+fi
 echo
 
 if command -v systemctl &>/dev/null && systemctl --user is-enabled --quiet "${SERVICE_NAME}" 2>/dev/null; then

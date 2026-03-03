@@ -110,3 +110,13 @@ def sort_prs(prs: list[PRInfo]) -> list[PRInfo]:
         prs,
         key=lambda pr: (not pr.review_requested, -pr.updated_at.timestamp()),
     )
+
+
+# ---------------------------------------------------------------------------
+# Markup escaping
+# ---------------------------------------------------------------------------
+
+
+def escape_markup(text: str) -> str:
+    """Escape text for safe use in Pango markup."""
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")

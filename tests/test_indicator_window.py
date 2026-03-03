@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from github_monitor.indicator._window_helpers import relative_time, sort_prs, status_text
+from github_monitor.indicator._window_helpers import escape_markup, relative_time, sort_prs, status_text
 from github_monitor.indicator.models import PRInfo
 
 # ---------------------------------------------------------------------------
@@ -213,3 +213,34 @@ class TestSortPrs:
         sort_prs(original)
 
         assert original == original_copy
+
+
+# ---------------------------------------------------------------------------
+# escape_markup
+# ---------------------------------------------------------------------------
+
+
+class TestEscapeMarkup:
+    """Pango markup escaping for safe display in GTK labels."""
+
+    def test_plain_text_unchanged(self) -> None:
+        assert escape_markup("hello world") == "hello world"
+
+    def test_ampersand_escaped(self) -> None:
+        assert escape_markup("A & B") == "A &amp; B"
+
+    def test_less_than_escaped(self) -> None:
+        assert escape_markup("a < b") == "a &lt; b"
+
+    def test_greater_than_escaped(self) -> None:
+        assert escape_markup("a > b") == "a &gt; b"
+
+    def test_all_special_chars_escaped(self) -> None:
+        assert escape_markup("<tag>&value</tag>") == "&lt;tag&gt;&amp;value&lt;/tag&gt;"
+
+    def test_empty_string(self) -> None:
+        assert escape_markup("") == ""
+
+    def test_repo_name_with_no_special_chars(self) -> None:
+        """Typical repo name should pass through unchanged."""
+        assert escape_markup("owner/repo") == "owner/repo"

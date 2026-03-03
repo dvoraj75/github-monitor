@@ -17,7 +17,7 @@ gi.require_version("Gtk", "3.0")
 
 from gi.repository import Gdk, Gtk, Pango  # noqa: E402
 
-from ._window_helpers import relative_time, sort_prs, status_text  # noqa: E402
+from ._window_helpers import escape_markup, relative_time, sort_prs, status_text  # noqa: E402
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -115,9 +115,11 @@ class PRWindow:
         self,
         on_pr_clicked: Callable[[str], None],
         on_refresh: Callable[[], None],
+        on_visibility_changed: Callable[[bool], None] | None = None,
     ) -> None:
         self._on_pr_clicked = on_pr_clicked
         self._on_refresh = on_refresh
+        self._on_visibility_changed = on_visibility_changed
 
         # Maps ListBoxRow index → PR URL for click handling.
         self._row_urls: dict[int, str] = {}
@@ -152,6 +154,11 @@ class PRWindow:
 
     # -- public API --------------------------------------------------------
 
+    @property
+    def visible(self) -> bool:
+        """Whether the popup window is currently visible."""
+        return self._visible
+
     def update_prs(self, prs: list[PRInfo], status: DaemonStatus | None) -> None:
         """Rebuild the PR list and update the footer."""
         self._clear_listbox()
@@ -170,22 +177,21 @@ class PRWindow:
         last_updated = status.last_updated if status else None
         self._footer.set_text(status_text(count, last_updated))
 
-        self._window.show_all()
-        # Re-hide the window if it wasn't visible before the update.
-        if not self._visible:
-            self._window.hide()
+        # Realize child widgets without showing the window itself
+        # to avoid a visual flash when the window is hidden.
+        self._realize_children()
 
     def show(self) -> None:
         """Show the popup window near the mouse pointer."""
         self._position_near_pointer()
         self._window.show_all()
         self._window.present()
-        self._visible = True
+        self._set_visible(visible=True)
 
     def hide(self) -> None:
         """Hide the popup window."""
         self._window.hide()
-        self._visible = False
+        self._set_visible(visible=False)
 
     def toggle(self) -> None:
         """Toggle popup window visibility."""
@@ -200,9 +206,8 @@ class PRWindow:
         self._show_empty_state("Daemon is not running\nWaiting for connection\u2026")
         self._footer.set_text("")
 
-        self._window.show_all()
-        if not self._visible:
-            self._window.hide()
+        # Realize child widgets without showing the window itself.
+        self._realize_children()
 
     # -- internal: window construction -------------------------------------
 
@@ -278,7 +283,7 @@ class PRWindow:
 
         # Line 1: repo + number.
         repo_label = Gtk.Label()
-        repo_label.set_markup(f"<b>{_escape_markup(pr.repo)}</b> #{pr.number}")
+        repo_label.set_markup(f"<b>{escape_markup(pr.repo)}</b> #{pr.number}")
         repo_label.set_halign(Gtk.Align.START)
         repo_label.set_ellipsize(Pango.EllipsizeMode.END)
         info_box.pack_start(repo_label, expand=False, fill=False, padding=0)
@@ -305,10 +310,33 @@ class PRWindow:
     # -- internal: state helpers -------------------------------------------
 
     def _clear_listbox(self) -> None:
-        """Remove all rows from the ListBox."""
+        """Remove all rows from the ListBox and destroy their widgets."""
         self._row_urls.clear()
         for child in self._listbox.get_children():
             self._listbox.remove(child)
+            child.destroy()
+
+    def _realize_children(self) -> None:
+        """Realize all child widgets so they are ready to display.
+
+        If the window is currently visible, ``show_all()`` is called on
+        the window itself.  If hidden, only the inner container is shown
+        so that GTK allocates sizes without flashing the window on
+        screen.
+        """
+        if self._visible:
+            self._window.show_all()
+        else:
+            # show_all() on the container realizes widgets (sizes, CSS)
+            # without making the top-level window visible.
+            for child in self._window.get_children():
+                child.show_all()
+
+    def _set_visible(self, visible: bool) -> None:  # noqa: FBT001
+        """Update the visibility flag and notify the callback."""
+        self._visible = visible
+        if self._on_visibility_changed is not None:
+            self._on_visibility_changed(visible)
 
     def _show_empty_state(self, message: str) -> None:
         """Show a centered message in the list area."""
@@ -386,8 +414,3 @@ class PRWindow:
     def _on_refresh_clicked(self, _button: Gtk.Button) -> None:
         """Handle the header refresh button click."""
         self._on_refresh()
-
-
-def _escape_markup(text: str) -> str:
-    """Escape text for safe use in Pango markup."""
-    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")

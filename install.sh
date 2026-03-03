@@ -3,10 +3,11 @@
 # install.sh — Install github-monitor as a systemd user service
 #
 # This script:
-#   1. Checks prerequisites (Python 3.13+, uv, notify-send, D-Bus)
+#   1. Checks prerequisites (Python 3.13+, uv, notify-send, D-Bus, GTK3/AppIndicator3)
 #   2. Installs the github-monitor package via uv tool install
 #   3. Interactively creates ~/.config/github-monitor/config.toml
 #   4. Installs and enables the systemd user service
+#   5. Installs the system tray indicator autostart (if GTK3/AppIndicator3 available)
 #
 # Safe to re-run (idempotent).
 #
@@ -28,7 +29,7 @@ warn()  { echo -e "${YELLOW}WARNING${NC} $*"; }
 err()   { echo -e "${RED}ERROR${NC} $*" >&2; }
 step()  { echo -e "\n${BOLD}[$1/$TOTAL_STEPS] $2${NC}"; }
 
-TOTAL_STEPS=4
+TOTAL_STEPS=5
 
 CONFIG_DIR="${HOME}/.config/github-monitor"
 CONFIG_FILE="${CONFIG_DIR}/config.toml"
@@ -256,6 +257,33 @@ systemctl --user enable --now "${SERVICE_NAME}"
 # Give it a moment to start
 sleep 2
 
+# --- Step 5: Install indicator autostart (if supported) ----------------------
+
+step 5 "Installing system tray indicator"
+
+AUTOSTART_DIR="${HOME}/.config/autostart"
+AUTOSTART_SRC="${SCRIPT_DIR}/autostart/github-monitor-indicator.desktop"
+AUTOSTART_DST="${AUTOSTART_DIR}/github-monitor-indicator.desktop"
+
+if [[ "$install_indicator" == true ]]; then
+    # Verify the indicator binary is available
+    if command -v github-monitor-indicator &>/dev/null || [[ -x "${HOME}/.local/bin/github-monitor-indicator" ]]; then
+        if [[ -f "${AUTOSTART_SRC}" ]]; then
+            mkdir -p "${AUTOSTART_DIR}"
+            cp "${AUTOSTART_SRC}" "${AUTOSTART_DST}"
+            ok "Indicator autostart installed to ${AUTOSTART_DST}"
+            info "The system tray indicator will start automatically on next login."
+            info "To start it now: github-monitor-indicator &"
+        else
+            warn "Autostart file not found: ${AUTOSTART_SRC} — skipping indicator setup."
+        fi
+    else
+        warn "github-monitor-indicator binary not found — skipping indicator setup."
+    fi
+else
+    info "Indicator not installed (missing GTK3/AppIndicator3 system packages)."
+fi
+
 # --- Summary ------------------------------------------------------------------
 
 echo
@@ -263,9 +291,12 @@ echo -e "${BOLD}============================================${NC}"
 echo -e "${BOLD} Installation complete!${NC}"
 echo -e "${BOLD}============================================${NC}"
 echo
-echo -e "  Config:  ${CONFIG_FILE}"
-echo -e "  Service: ${SERVICE_DST}"
-echo -e "  Binary:  $(command -v github-monitor 2>/dev/null || echo "${HOME}/.local/bin/github-monitor")"
+echo -e "  Config:    ${CONFIG_FILE}"
+echo -e "  Service:   ${SERVICE_DST}"
+echo -e "  Binary:    $(command -v github-monitor 2>/dev/null || echo "${HOME}/.local/bin/github-monitor")"
+if [[ "$install_indicator" == true ]] && [[ -f "${AUTOSTART_DST}" ]]; then
+    echo -e "  Indicator: ${AUTOSTART_DST}"
+fi
 echo
 
 info "Service status:"
@@ -278,5 +309,8 @@ echo "  systemctl --user reload github-monitor    # reload config (no restart ne
 echo "  systemctl --user restart github-monitor   # full restart"
 echo "  journalctl --user -u github-monitor -f    # follow logs"
 echo "  systemctl --user stop github-monitor      # stop the service"
+if [[ "$install_indicator" == true ]]; then
+    echo "  github-monitor-indicator                  # start the tray indicator"
+fi
 echo "  ./update.sh                               # update to latest version"
 echo "  ./uninstall.sh                            # uninstall everything"

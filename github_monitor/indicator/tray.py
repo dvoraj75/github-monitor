@@ -85,6 +85,10 @@ class TrayIcon:
         self._connected = connected
         self._apply_state()
 
+    def set_window_visible(self, *, visible: bool) -> None:
+        """Update the 'Show PRs' / 'Hide PRs' menu item label."""
+        self._show_prs_item.set_label("Hide PRs" if visible else "Show PRs")
+
     # -- internal ----------------------------------------------------------
 
     def _apply_state(self) -> None:

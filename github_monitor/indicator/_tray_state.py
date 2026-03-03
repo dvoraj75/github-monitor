@@ -10,8 +10,6 @@ from enum import StrEnum
 
 
 # Icon name constants — resolved from the icon theme or a custom path.
-# These won't render until Step 7 creates the actual SVGs; until then
-# AppIndicator3 will show a blank/fallback icon.
 class Icon(StrEnum):
     NEUTRAL = "github-monitor"
     ACTIVE = "github-monitor-active"

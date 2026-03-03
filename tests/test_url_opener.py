@@ -1,3 +1,5 @@
+"""Tests for github_monitor.url_opener — browser opening via XDG Desktop Portal / xdg-open."""
+
 from __future__ import annotations
 
 import asyncio
@@ -71,6 +73,17 @@ class TestOpenUrlPortal:
     async def test_portal_error_reply_returns_false(self) -> None:
         """Portal returns an ERROR reply — returns False for fallback."""
         bus = self._mock_bus(reply_type=MessageType.ERROR)
+
+        with patch("github_monitor.url_opener.MessageBus", return_value=bus):
+            result = await _open_url_portal("https://github.com/owner/repo/pull/1")
+
+        assert result is False
+        bus.disconnect.assert_called_once()
+
+    async def test_portal_no_reply_returns_false(self) -> None:
+        """bus.call returns None — returns False for fallback."""
+        bus = self._mock_bus()
+        bus.call.return_value = None
 
         with patch("github_monitor.url_opener.MessageBus", return_value=bus):
             result = await _open_url_portal("https://github.com/owner/repo/pull/1")
