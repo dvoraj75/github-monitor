@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.3.0.dev] - Unreleased
 
+### Fixed
+
+- Config reload (SIGHUP) did not take effect until the current poll interval expired -- the new `poll_interval` (and an immediate re-poll) now applies instantly after reload
+
 ### Changed
 
 - Split CI pipeline into two parallel jobs: **Lint & type check** and **Test & audit** for faster feedback

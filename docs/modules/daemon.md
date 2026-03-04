@@ -56,9 +56,11 @@ always be called after `start()` returns -- typically in a `try/finally` block.
 Main polling loop. Repeatedly calls `_poll_once()` and then waits for the
 configured `poll_interval` seconds before polling again.
 
-Uses an `asyncio.Event` for the wait, so that a shutdown signal (SIGTERM /
-SIGINT) can wake the loop immediately rather than blocking up to
-`poll_interval` seconds. This provides responsive shutdown behaviour.
+Uses `asyncio.wait()` with two event tasks -- a shutdown event and a reload
+event -- so that both SIGTERM/SIGINT (shutdown) and SIGHUP (config reload) can
+wake the loop immediately rather than blocking up to `poll_interval` seconds.
+On shutdown the loop exits; on reload it re-polls immediately with the new
+configuration.
 
 ### `async _poll_once() -> None`
 
@@ -100,7 +102,9 @@ signals the shutdown event to wake the poll loop immediately.
 ### `_handle_reload() -> None`
 
 Synchronous handler for `SIGHUP`. Schedules an async config reload task on
-the running event loop (signal handlers cannot be async).
+the running event loop (signal handlers cannot be async). On successful reload,
+the reload event is set, waking the poll loop for an immediate re-poll with the
+new configuration.
 
 ### `async _reload_config() -> None`
 
@@ -143,7 +147,7 @@ Daemon._poll_once()
 |---|---|---|
 | `SIGTERM` | `_handle_shutdown()` | Graceful shutdown -- exits poll loop immediately |
 | `SIGINT` | `_handle_shutdown()` | Same as SIGTERM (Ctrl+C in terminal) |
-| `SIGHUP` | `_handle_reload()` | Reload config from disk (respects `-c` path), apply log level, recreate HTTP session |
+| `SIGHUP` | `_handle_reload()` | Reload config from disk (respects `-c` path), apply log level, recreate HTTP session, wake poll loop for immediate re-poll |
 
 ## Usage example
 
@@ -204,17 +208,20 @@ github-monitor -c /path/to/config.toml  # custom config
 
 ## Design notes
 
-- The poll loop uses `asyncio.wait_for(event.wait(), timeout=...)` rather
-  than `asyncio.sleep()`. This makes shutdown immediate -- the event is set by
-  the SIGTERM/SIGINT handler, waking the wait without blocking for the
-  remaining poll interval
+- The poll loop uses `asyncio.wait()` with two event tasks (shutdown and
+  reload) rather than `asyncio.sleep()`. This makes both shutdown and config
+  reload immediate -- the shutdown event is set by the SIGTERM/SIGINT handler,
+  and the reload event is set after a successful SIGHUP config reload, either
+  of which wakes the wait without blocking for the remaining poll interval
 - First-poll notification suppression prevents a burst of notifications when
   the daemon starts with many existing review requests. The D-Bus signal still
   fires so panel plugins can populate their state. This can be overridden via
   `notify_on_first_poll = true` in the config
 - SIGHUP config reload closes and restarts the HTTP session to ensure a new
-  token (if changed) is picked up in the session headers. The reload is
-  scheduled as a task because signal handlers cannot be async
+  token (if changed) is picked up in the session headers. On success, the
+  reload event wakes the poll loop so the new settings (including
+  `poll_interval`) take effect immediately with a fresh poll cycle. The reload
+  is scheduled as a task because signal handlers cannot be async
 - Config reload uses `self.config_path` (set at construction time) to ensure
   the same file is re-read on reload, even when the daemon was started with
   `-c /custom/path`
