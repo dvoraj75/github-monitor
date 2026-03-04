@@ -19,6 +19,7 @@ Internal constants (prefixed with `_`):
 | `_MIN_POLL_INTERVAL` | `int` | `30` | Minimum allowed poll interval in seconds |
 | `_VALID_LOG_LEVELS` | `frozenset[str]` | `{"debug", "info", "warning", "error"}` | Allowed values for `log_level` |
 | `_VALID_URGENCIES` | `frozenset[str]` | `{"low", "normal", "critical"}` | Allowed values for `notification_urgency` |
+| `_VALID_ICON_THEMES` | `frozenset[str]` | `{"light", "dark"}` | Allowed values for `icon_theme` |
 
 ## `ConfigError`
 
@@ -45,6 +46,7 @@ a `ConfigError` with a human-readable message describing what went wrong.
 - `"max_retries must be >= 0, got -1"`
 - `"notification_threshold must be >= 1, got 0"`
 - `"notification_urgency must be one of ['critical', 'low', 'normal'], got 'extreme'"`
+- `"icon_theme must be one of ['dark', 'light'], got 'blue'"`
 
 ## `Config`
 
@@ -63,6 +65,7 @@ class Config:
     max_retries: int = 3
     notification_threshold: int = 3
     notification_urgency: str = "normal"
+    icon_theme: str = "light"
 ```
 
 An immutable (frozen) dataclass holding validated configuration values.
@@ -81,6 +84,7 @@ An immutable (frozen) dataclass holding validated configuration values.
 | `max_retries` | `int` | `3` | Max HTTP retries for 5xx errors (>= 0) |
 | `notification_threshold` | `int` | `3` | Individual vs. summary notification cutoff (>= 1) |
 | `notification_urgency` | `str` | `"normal"` | Notification urgency: `low`, `normal`, `critical` |
+| `icon_theme` | `str` | `"light"` | Icon theme for tray indicator: `light`, `dark` |
 
 The dataclass is frozen, so fields cannot be modified after creation:
 
@@ -211,6 +215,7 @@ individual validation helpers above.
 10. `max_retries` -- must be an `int` >= 0 (via `_validate_int_min`)
 11. `notification_threshold` -- must be an `int` >= 1 (via `_validate_int_min`)
 12. `notification_urgency` -- must be one of `_VALID_URGENCIES` (via `_validate_choice`)
+13. `icon_theme` -- must be one of `_VALID_ICON_THEMES` (via `_validate_choice`)
 
 ## Tests
 
@@ -223,6 +228,6 @@ Tests in `tests/test_config.py` covering:
   poll_interval type/value, invalid repo format, repos not a list)
 - New config fields (log_level, notify_on_first_poll, notifications_enabled,
   dbus_enabled, github_base_url, max_retries, notification_threshold,
-  notification_urgency) -- defaults, valid values, invalid types, edge cases
+  notification_urgency, icon_theme) -- defaults, valid values, invalid types, edge cases
   (case-insensitivity, trailing slash stripping, zero retries)
 - Edge cases (empty token/username strings, boundary poll_interval = 30)

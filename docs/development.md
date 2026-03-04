@@ -23,8 +23,8 @@ ruff, mypy, etc.).
 
 ```
 github_monitor/          # Main package
-├── __init__.py          # __version__ = "1.2.1"
-├── __main__.py          # python -m entry point
+├── __init__.py          # __version__ = "1.3.0.dev2"
+├── __main__.py          # Entry point -- dispatches to CLI subcommands or daemon
 ├── config.py            # Config loading + validation
 ├── poller.py            # GitHub API client
 ├── store.py             # State store
@@ -32,6 +32,16 @@ github_monitor/          # Main package
 ├── notifier.py          # Desktop notifications
 ├── url_opener.py        # Shared URL opener (XDG portal + xdg-open)
 ├── daemon.py            # Main daemon loop
+├── cli/                 # CLI management subcommands (stdlib only)
+│   ├── __init__.py      # Subcommand parser + dispatch
+│   ├── setup.py         # Setup wizard (config + systemd)
+│   ├── service.py       # Service management (start/stop/status/...)
+│   ├── uninstall.py     # Uninstall flow (stop, remove, cleanup)
+│   ├── _output.py       # Coloured terminal output helpers
+│   ├── _prompts.py      # Interactive prompt helpers
+│   ├── _checks.py       # System dependency checks
+│   ├── _systemd.py      # Systemd operations (install/remove/start/stop)
+│   └── systemd/         # Bundled .service files (importlib.resources)
 └── indicator/           # System tray indicator (separate process)
     ├── __init__.py
     ├── __main__.py      # Entry point + dependency checks
@@ -49,6 +59,7 @@ systemd/
 └── github-monitor-indicator.service  # Systemd user service (indicator)
 
 tests/
+├── conftest.py          # Shared test fixtures
 ├── test_config.py       # Config loading and validation
 ├── test_poller.py       # GitHub API client
 ├── test_store.py        # State store and diffing
@@ -56,10 +67,20 @@ tests/
 ├── test_notifier.py     # Desktop notifications
 ├── test_daemon.py       # Daemon lifecycle and integration
 ├── test_main.py         # CLI entry point
+├── test_url_opener.py       # URL opener (XDG portal + xdg-open)
 ├── test_indicator_app.py    # Indicator orchestrator
 ├── test_indicator_client.py # Indicator D-Bus client
 ├── test_indicator_tray.py   # Indicator tray icon
-└── test_indicator_window.py # Indicator popup window + helpers
+├── test_indicator_window.py # Indicator popup window + helpers
+├── test_indicator_main.py   # Indicator entry point
+├── test_cli_init.py         # CLI parser + dispatch
+├── test_cli_output.py       # CLI output helpers
+├── test_cli_prompts.py      # CLI prompt helpers
+├── test_cli_checks.py       # CLI dependency checks
+├── test_cli_systemd.py      # CLI systemd operations
+├── test_cli_setup.py        # CLI setup command
+├── test_cli_service.py      # CLI service command
+└── test_cli_uninstall.py    # CLI uninstall command
 ```
 
 ## Running checks
@@ -128,7 +149,13 @@ Test files get relaxed rules:
     "SLF001",  # private member access is fine in tests
     "INP001",  # tests don't need __init__.py
     "ARG001",  # unused callback args (aioresponses callbacks)
+    "ARG002",  # unused method args from stacked @patch decorators
+    "PLR0913", # test helpers often mirror dataclass constructors
     "ERA001",  # commented-out code used as section headers in tests
+]
+"github_monitor/cli/_systemd.py" = [
+    "S603",    # subprocess call with non-literal args — all args are internal constants
+    "S607",    # partial executable path — systemctl is a standard system binary
 ]
 ```
 
@@ -201,6 +228,7 @@ dev = [
     "pytest-xdist>=3.8.0",
     "pytest-cov>=7.0.0",
     "pre-commit>=4.5.1",
+    "pip-audit>=2.7",
 ]
 ```
 
@@ -353,7 +381,7 @@ push and pull request to `main` or `develop`, two jobs run **in parallel**:
 2. **Lint** -- `ruff check .`
 3. **Format** -- `ruff format --check .`
 4. **Type check** -- `mypy github_monitor`
-5. **ShellCheck** -- lints all `.sh` scripts (`install.sh`, `update.sh`, `uninstall.sh`)
+5. **ShellCheck** -- lints the deprecated `.sh` scripts (`install.sh`, `update.sh`, `uninstall.sh`)
 
 ### Test & audit
 

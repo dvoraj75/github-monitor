@@ -29,6 +29,10 @@ step()  { echo -e "\n${BOLD}[$1/$TOTAL_STEPS] $2${NC}"; }
 
 TOTAL_STEPS=5
 
+warn "DEPRECATED: This script is deprecated and will be removed in a future release."
+warn "            Use 'github-monitor uninstall' instead."
+echo ""
+
 CONFIG_DIR="${HOME}/.config/github-monitor"
 SYSTEMD_USER_DIR="${HOME}/.config/systemd/user"
 SERVICE_NAME="github-monitor"

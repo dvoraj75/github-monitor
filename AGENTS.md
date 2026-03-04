@@ -16,7 +16,18 @@ Key traits:
 ## Architecture
 
 ```
-__main__.py          CLI entry point -- parses args, loads config, runs Daemon
+__main__.py          CLI entry point -- dispatches to CLI subcommands or daemon
+    |
+    +---> cli/               Management subcommands (setup, service, uninstall)
+    |       __init__.py      Argparse parser + run_cli() dispatch
+    |       setup.py         Interactive setup wizard (config + systemd)
+    |       service.py       Systemd service management (start/stop/status/...)
+    |       uninstall.py     Uninstall flow (stop services, remove files)
+    |       _output.py       Coloured terminal output helpers
+    |       _prompts.py      Interactive prompt helpers (ask_string, ask_yes_no, ...)
+    |       _checks.py       System dependency checks (notify-send, D-Bus, GTK, systemctl)
+    |       _systemd.py      Systemd operations (install/remove units, start/stop/reload)
+    |       systemd/         Bundled .service files (accessed via importlib.resources)
     |
     v
 daemon.py            Orchestrator -- wires poller, store, D-Bus, notifier
@@ -45,7 +56,15 @@ indicator/               Separate process -- system tray icon + popup window
 
 | Module | Role |
 |---|---|
-| `__main__.py` | CLI entry point. Parses `--config` / `--verbose`, calls `asyncio.run()`. |
+| `__main__.py` | CLI entry point. Builds a unified argparse parser with daemon flags (`-c`, `-v`) and management subcommands (`setup`, `service`, `uninstall`). When `args.command` is set, dispatches to `cli.dispatch()`. Otherwise starts the daemon. |
+| `cli/__init__.py` | Registers subcommands via `add_subcommands()`, dispatches via `dispatch()`. Also provides `build_parser()` and `run_cli()` for standalone/test use. |
+| `cli/setup.py` | Interactive setup wizard. Config file creation (token, username, poll interval, repos), systemd service installation, and enable+start. Supports `--config-only` and `--service-only` flags. |
+| `cli/service.py` | Thin CLI layer over `_systemd.py`. Actions: `install`, `start`, `stop`, `restart`, `status`, `enable`, `disable`. Manages both daemon and indicator services. |
+| `cli/uninstall.py` | Uninstall flow. Stops and disables services, removes systemd unit files and legacy autostart entry, optionally removes config directory. |
+| `cli/_output.py` | Coloured terminal output helpers (`info`, `ok`, `warn`, `err`, `step`). Colour suppressed when stdout is not a TTY. |
+| `cli/_prompts.py` | Interactive prompt helpers (`ask_string`, `ask_yes_no`, `ask_int`, `ask_list`). Input validation with retry loops. |
+| `cli/_checks.py` | System dependency checks (`check_notify_send`, `check_dbus_session`, `check_gtk_indicator`, `check_systemctl`). |
+| `cli/_systemd.py` | All systemd interactions: install/remove service files, daemon-reload, start/stop/restart/enable/disable, status queries, legacy autostart cleanup. |
 | `config.py` | Loads `config.toml`, validates fields, supports env var overrides (`GITHUB_TOKEN`). |
 | `daemon.py` | Main `Daemon` class. Lifecycle: `start()` -> poll loop -> `stop()`. Signal handlers for graceful shutdown and config reload. |
 | `poller.py` | `PullRequest` frozen dataclass (core data model) + `GitHubClient` async HTTP client. Uses GitHub Search Issues API with pagination, rate limiting, exponential backoff retries. |
@@ -86,6 +105,19 @@ uv run github-monitor -c config.toml -v   # debug logging
 
 # Run as module
 uv run python -m github_monitor -c config.toml
+
+# CLI management commands
+uv run github-monitor setup                     # full setup wizard
+uv run github-monitor setup --config-only       # only create config.toml
+uv run github-monitor setup --service-only      # only install + start systemd services
+uv run github-monitor service status             # show service status
+uv run github-monitor service start              # start services
+uv run github-monitor service stop               # stop services
+uv run github-monitor service restart            # restart services
+uv run github-monitor service install            # install systemd unit files
+uv run github-monitor service enable             # enable autostart
+uv run github-monitor service disable            # disable autostart
+uv run github-monitor uninstall                  # remove services + optionally config
 
 # Install as systemd user service
 systemctl --user enable --now github-monitor
@@ -167,10 +199,12 @@ uv run mypy github_monitor
 | `systemd/github-monitor.service` | Systemd user unit file for the daemon. |
 | `systemd/github-monitor-indicator.service` | Systemd user unit file for the indicator. Depends on the daemon service. |
 | `github_monitor/indicator/` | System tray indicator package. Separate process, connects to daemon over D-Bus. Requires GTK3/AppIndicator3/gbulb. |
+| `github_monitor/cli/` | CLI management subcommands package. Setup wizard, service management, uninstall. Stdlib only (no extra deps). |
+| `github_monitor/cli/systemd/` | Bundled `.service` files accessed via `importlib.resources`. |
 | `github_monitor/url_opener.py` | Shared URL opener (XDG portal + xdg-open fallback). Used by both notifier and indicator. |
-| `install.sh` | Automated installer -- prereqs, uv tool install, config wizard, systemd setup. |
-| `update.sh` | Update script -- git pull (with dirty/branch checks), reinstall, restart service. |
-| `uninstall.sh` | Uninstall script -- stop service, remove unit, uninstall package, optionally remove config. |
+| `install.sh` | **DEPRECATED.** Automated installer -- use `github-monitor setup` instead. |
+| `update.sh` | **DEPRECATED.** Update script -- use `pip install --upgrade github-monitor` instead. |
+| `uninstall.sh` | **DEPRECATED.** Uninstall script -- use `github-monitor uninstall` instead. |
 | `docs/` | Architecture, configuration, development, and module documentation. |
 
 ## Common Modification Patterns
@@ -220,6 +254,30 @@ When modifying the D-Bus wire format (e.g. adding a field to `_serialize_pr()`
 in `dbus_service.py`), also update:
 - `client.py` `_parse_pr()` to handle the new field
 - `models.py` `PRInfo` dataclass to include the new field
+
+### Adding/modifying CLI subcommands
+
+The CLI package (`github_monitor.cli`) uses stdlib only (no extra deps). Key patterns:
+
+1. **Shared helpers** are in `_output.py`, `_prompts.py`, `_checks.py`, and
+   `_systemd.py`. These are pure-Python modules with no async code.
+2. **Subcommand handlers** are in `setup.py`, `service.py`, and `uninstall.py`.
+   Each exports a single `run_*()` entry point.
+3. **Parser and dispatch** are in `__init__.py` (`add_subcommands()` + `dispatch()`).
+   `build_parser()` and `run_cli()` are also provided for standalone/test use.
+   Subcommand modules are imported lazily inside `dispatch()` to avoid loading
+   unused code.
+4. **Unified parser** in `__main__.py` builds a single argparse parser with both
+   daemon flags (`-c`, `-v`) and management subcommands. When `args.command` is
+   not `None`, it dispatches to `cli.dispatch(args)`.
+5. **Bundled service files** live in `cli/systemd/` and are read via
+   `importlib.resources.files("github_monitor.cli.systemd")`.
+
+When adding a new CLI subcommand:
+1. Create `cli/<command>.py` with a `run_<command>()` entry point
+2. Add the subparser in `add_subcommands()` in `cli/__init__.py`
+3. Add the dispatch case in `dispatch()` in `cli/__init__.py`
+4. Add tests in `tests/test_cli_<command>.py`
 
 ## Security Notes
 

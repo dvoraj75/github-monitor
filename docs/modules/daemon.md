@@ -175,19 +175,50 @@ parsing and logging setup.
 
 ## CLI entry point (`__main__.py`)
 
-The `main()` function in `__main__.py` provides the command-line interface:
+The `main()` function in `__main__.py` is the single entry point for all
+`github-monitor` invocations.  A unified argument parser exposes both daemon
+flags (`-c`, `-v`) and management subcommands (`setup`, `service`, `uninstall`)
+so that `github-monitor --help` shows everything:
 
 ```
-usage: github-monitor [-h] [-c CONFIG] [-v]
+usage: github-monitor [-h] [-c CONFIG] [-v] {setup,service,uninstall} ...
 
-GitHub PR monitor daemon
+GitHub PR Monitor
+
+positional arguments:
+  {setup,service,uninstall}
+    setup               Initial setup wizard
+    service             Manage systemd services
+    uninstall           Remove services and optionally config
 
 options:
   -h, --help            show this help message and exit
-  -c CONFIG, --config CONFIG
-                        Path to config.toml
+  -c, --config CONFIG   Path to config.toml
   -v, --verbose         Enable debug logging
+
+Run without a command to start the daemon.
 ```
+
+The parser is built by `_build_parser()`, which calls
+`cli.add_subcommands()` to register the management subcommands.  After
+parsing, `main()` checks `args.command`:
+
+- **Not `None`** — dispatches to `cli.dispatch(args)` (management CLI).
+- **`None`** — runs the daemon via `_run_daemon(args)`.
+
+### Management subcommands
+
+```bash
+github-monitor setup                # interactive setup wizard
+github-monitor setup --config-only  # only create config.toml
+github-monitor setup --service-only # only install + start systemd services
+github-monitor service <action>     # start | stop | restart | status | install | enable | disable
+github-monitor uninstall            # remove services, optionally remove config
+```
+
+See [cli module docs](cli.md) for the full API reference.
+
+### Daemon mode
 
 | Flag | Description |
 |---|---|

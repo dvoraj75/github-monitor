@@ -21,8 +21,23 @@ uv run pytest                  # tests (ALL passing)
 uv run pip-audit               # dependency vulnerability scan
 ```
 
-If you modify shell scripts (`install.sh`, `update.sh`, `uninstall.sh`), also
-run [ShellCheck](https://www.shellcheck.net/): `shellcheck *.sh`
+### CLI package
+
+If you modify or add CLI subcommands in `github_monitor/cli/`, run the CLI
+tests separately to verify:
+
+```bash
+uv run pytest tests/test_cli_setup.py tests/test_cli_service.py tests/test_cli_uninstall.py -v
+```
+
+The CLI package uses **stdlib only** (no extra dependencies).
+
+### Shell scripts (deprecated)
+
+The shell scripts `install.sh`, `update.sh`, and `uninstall.sh` are
+**deprecated** in favour of `github-monitor setup`, `pip install --upgrade`,
+and `github-monitor uninstall` respectively. If you modify them, run
+[ShellCheck](https://www.shellcheck.net/): `shellcheck *.sh`
 
 All checks must pass before a PR will be merged (CI runs them automatically).
 

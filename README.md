@@ -124,6 +124,25 @@ uv run github-monitor -c /path/to/config.toml
 uv run github-monitor -v
 ```
 
+### Management commands
+
+github-monitor includes built-in CLI subcommands for setup, service management,
+and uninstall:
+
+```bash
+uv run github-monitor setup                     # interactive setup wizard
+uv run github-monitor setup --config-only       # only create config.toml
+uv run github-monitor setup --service-only      # only install + start systemd services
+uv run github-monitor service status             # show service status
+uv run github-monitor service start              # start services
+uv run github-monitor service stop               # stop services
+uv run github-monitor service restart            # restart services
+uv run github-monitor service install            # install systemd unit files
+uv run github-monitor service enable             # enable autostart
+uv run github-monitor service disable            # disable autostart
+uv run github-monitor uninstall                  # remove services + optionally config
+```
+
 ### Run the indicator (optional)
 
 The system tray indicator is a separate process that connects to the running
@@ -143,22 +162,36 @@ uv run github-monitor-indicator -v
 
 ### Automated install / update / uninstall
 
-The project includes scripts for managing github-monitor as a systemd user
-service:
+The recommended way to set up github-monitor as a systemd user service is with
+the built-in setup wizard:
 
 ```bash
-./install.sh     # interactive install (prereqs, package, config, systemd service)
-./update.sh      # pull latest + re-install package + restart service
-./uninstall.sh   # stop service, remove package, optionally remove config
+github-monitor setup                     # full setup: config + services
+github-monitor setup --config-only       # only create config.toml
+github-monitor setup --service-only      # only install + start systemd services
 ```
 
-The install script is interactive and walks you through configuration.
-The update script is git-aware -- it will skip `git pull` if you have
-uncommitted changes or are on a non-main branch (unless you confirm).
+To update to the latest version:
+
+```bash
+pip install --upgrade github-monitor     # or: pipx upgrade github-monitor
+github-monitor service install           # update service files
+github-monitor service restart           # restart with new version
+```
+
+To uninstall:
+
+```bash
+github-monitor uninstall                 # stop services, remove units, optionally remove config
+```
+
+> **Note:** The `install.sh`, `update.sh`, and `uninstall.sh` shell scripts are
+> **deprecated** and will be removed in a future release. Use the CLI
+> subcommands above instead.
 
 ### Systemd user service (manual setup)
 
-If you prefer to set things up manually instead of using the install script:
+If you prefer to set things up manually instead of using `github-monitor setup`:
 
 ```bash
 # Install the daemon service
@@ -193,13 +226,13 @@ configuration, security hardening details, and troubleshooting.
 github-monitor/
 ├── config.example.toml          # Example configuration file
 ├── pyproject.toml               # Project metadata, deps, tool config
-├── install.sh                   # Automated installer script
-├── update.sh                    # Update script (pull + reinstall + restart)
-├── uninstall.sh                 # Uninstall script
+├── install.sh                   # DEPRECATED -- use 'github-monitor setup'
+├── update.sh                    # DEPRECATED -- use 'pip install --upgrade github-monitor'
+├── uninstall.sh                 # DEPRECATED -- use 'github-monitor uninstall'
 │
 ├── github_monitor/
 │   ├── __init__.py              # Package marker (__version__)
-│   ├── __main__.py              # python -m github_monitor entry point
+│   ├── __main__.py              # Entry point -- dispatches to CLI subcommands or daemon
 │   ├── config.py                # Configuration loading and validation
 │   ├── poller.py                # GitHub API client (search, pagination, rate limits)
 │   ├── store.py                 # In-memory state store with diff computation
@@ -207,6 +240,17 @@ github-monitor/
 │   ├── notifier.py              # Desktop notifications via notify-send
 │   ├── url_opener.py            # Shared URL opener (XDG portal + xdg-open fallback)
 │   ├── daemon.py                # Main daemon loop and signal handling
+│   │
+│   ├── cli/                     # CLI management subcommands (stdlib only)
+│   │   ├── __init__.py          # Subcommand parser + dispatch
+│   │   ├── setup.py             # Setup wizard (config + systemd)
+│   │   ├── service.py           # Service management (start/stop/status/...)
+│   │   ├── uninstall.py         # Uninstall flow (stop, remove, cleanup)
+│   │   ├── _output.py           # Coloured terminal output helpers
+│   │   ├── _prompts.py          # Interactive prompt helpers
+│   │   ├── _checks.py           # System dependency checks
+│   │   ├── _systemd.py          # Systemd operations (install/remove/start/stop)
+│   │   └── systemd/             # Bundled .service files (importlib.resources)
 │   │
 │   └── indicator/               # System tray indicator (optional, separate process)
 │       ├── __init__.py
@@ -225,6 +269,7 @@ github-monitor/
 │   └── github-monitor-indicator.service # Systemd user service (indicator)
 │
 ├── tests/
+│   ├── conftest.py              # Shared test fixtures
 │   ├── test_config.py           # Tests for config module
 │   ├── test_poller.py           # Tests for poller module
 │   ├── test_store.py            # Tests for store module
@@ -232,10 +277,20 @@ github-monitor/
 │   ├── test_notifier.py         # Tests for notifier module
 │   ├── test_daemon.py           # Tests for daemon module
 │   ├── test_main.py             # Tests for __main__ module
+│   ├── test_url_opener.py       # Tests for URL opener module
 │   ├── test_indicator_app.py    # Tests for indicator app orchestrator
 │   ├── test_indicator_client.py # Tests for indicator D-Bus client
 │   ├── test_indicator_tray.py   # Tests for indicator tray state logic
-│   └── test_indicator_window.py # Tests for indicator window helpers
+│   ├── test_indicator_window.py # Tests for indicator window helpers
+│   ├── test_indicator_main.py   # Tests for indicator entry point
+│   ├── test_cli_init.py         # Tests for CLI parser + dispatch
+│   ├── test_cli_output.py       # Tests for CLI output helpers
+│   ├── test_cli_prompts.py      # Tests for CLI prompt helpers
+│   ├── test_cli_checks.py       # Tests for CLI dependency checks
+│   ├── test_cli_systemd.py      # Tests for CLI systemd operations
+│   ├── test_cli_setup.py        # Tests for setup command
+│   ├── test_cli_service.py      # Tests for service command
+│   └── test_cli_uninstall.py    # Tests for uninstall command
 │
 └── docs/                        # Detailed documentation
     ├── architecture.md
@@ -243,6 +298,7 @@ github-monitor/
     ├── development.md
     ├── systemd.md
     └── modules/
+        ├── cli.md
         ├── config.md
         ├── poller.md
         ├── store.md
@@ -274,6 +330,7 @@ details, and project structure notes.
 | [docs/configuration.md](docs/configuration.md) | Full configuration reference with examples |
 | [docs/development.md](docs/development.md) | Developer guide: tooling, conventions, testing |
 | [docs/systemd.md](docs/systemd.md) | Systemd user service setup and management |
+| [docs/modules/cli.md](docs/modules/cli.md) | CLI management package API reference |
 | [docs/modules/config.md](docs/modules/config.md) | `config.py` API reference |
 | [docs/modules/poller.md](docs/modules/poller.md) | `poller.py` API reference |
 | [docs/modules/store.md](docs/modules/store.md) | `store.py` API reference |

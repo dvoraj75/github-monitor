@@ -5,6 +5,11 @@ overrides.
 
 ## Config file location
 
+> **Tip:** Run `github-monitor setup` (or `github-monitor setup --config-only`)
+> to create the config file interactively. The wizard prompts for the token,
+> username, poll interval, and optional repository filter, then writes
+> `config.toml` to the default location.
+
 The config file path is resolved in this order:
 
 1. **Explicit path** -- passed directly to `load_config(path)` or via the `-c` /
