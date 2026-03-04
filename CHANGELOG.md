@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.3.0.dev] - Unreleased
 
+### Added
+
+- CLI management subcommands replacing the shell scripts with a Python-native solution:
+  - `github-monitor setup` -- interactive config wizard + systemd service installation (supports `--config-only` and `--service-only` flags)
+  - `github-monitor service` -- systemd service management (install, start, stop, restart, status, enable, disable)
+  - `github-monitor uninstall` -- stop services, remove unit files, optionally remove config
+- Bundled systemd service files as package data (accessed via `importlib.resources`)
+
+### Deprecated
+
+- `install.sh` -- use `github-monitor setup` instead
+- `update.sh` -- use `pip install --upgrade github-monitor` instead
+- `uninstall.sh` -- use `github-monitor uninstall` instead
+
 ### Fixed
 
 - Config reload (SIGHUP) did not take effect until the current poll interval expired -- the new `poll_interval` (and an immediate re-poll) now applies instantly after reload

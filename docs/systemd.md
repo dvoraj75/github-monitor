@@ -15,8 +15,8 @@ process managed by your user session (not root). This means:
 
 ## Prerequisites
 
-- github-monitor installed and accessible at `~/.local/bin/github-monitor`
-  (e.g. via `uv tool install .` or `pip install --user .`)
+- github-monitor installed (e.g. via `uv sync`, `uv tool install .`, or
+  `pip install --user .`)
 - A valid configuration file at `~/.config/github-monitor/config.toml`
 - D-Bus session bus available (standard on any Linux desktop)
 - `systemd --user` running (standard on modern Linux distributions)
@@ -35,6 +35,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart=%h/.local/bin/github-monitor
+ExecReload=kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=10
 Environment=GITHUB_TOKEN=
@@ -64,7 +65,8 @@ WantedBy=default.target
 | Directive | Value | Purpose |
 |---|---|---|
 | `Type` | `simple` | The process started by `ExecStart` is the main daemon process |
-| `ExecStart` | `%h/.local/bin/github-monitor` | Path to the executable (`%h` expands to `$HOME`) |
+| `ExecStart` | *(resolved at install time)* | Absolute path to the executable, determined by `github-monitor service install` |
+| `ExecReload` | `kill -HUP $MAINPID` | Send SIGHUP to reload configuration without restarting |
 | `Restart` | `on-failure` | Restart the service if it exits with a non-zero code |
 | `RestartSec` | `10` | Wait 10 seconds before restarting after failure |
 | `Environment` | `GITHUB_TOKEN=` | Placeholder for the GitHub token (see [Token configuration](#token-configuration)) |
@@ -92,29 +94,36 @@ access to the filesystem.
 
 ### Automated (recommended)
 
-The easiest way to install is with the included install script, which handles
-prerequisites, package installation, interactive configuration, and systemd
-setup:
+The easiest way to install is with the built-in setup wizard:
 
 ```bash
-./install.sh
+github-monitor setup
 ```
+
+This walks you through configuration, installs systemd service files, and
+enables + starts the services. You can also run individual steps:
+
+```bash
+github-monitor setup --config-only    # only create config.toml
+github-monitor setup --service-only   # only install + start services
+```
+
+> **Note:** The `install.sh` script is deprecated. Use `github-monitor setup`
+> instead.
 
 ### Manual
 
 ```bash
-# 1. Create the systemd user directory (if it doesn't exist)
-mkdir -p ~/.config/systemd/user/
+# 1. Install/update systemd service files (resolves executable path automatically)
+github-monitor service install
 
-# 2. Copy the service file
-cp systemd/github-monitor.service ~/.config/systemd/user/
-
-# 3. Reload systemd to pick up the new unit file
-systemctl --user daemon-reload
-
-# 4. Enable the service (starts on login) and start it now
+# 2. Enable the service (starts on login) and start it now
 systemctl --user enable --now github-monitor
 ```
+
+If you prefer to copy the files yourself, note that the bundled templates in
+`systemd/` contain placeholders — use `github-monitor service install` to get
+service files with the correct `ExecStart` path for your installation.
 
 ## Token configuration
 
@@ -161,7 +170,26 @@ overwritten when you update the service file from the repository.
 
 ## Managing the service
 
-### Check status
+### Via CLI (recommended)
+
+The `github-monitor service` command wraps common systemctl operations:
+
+```bash
+github-monitor service status      # show service status
+github-monitor service start       # start daemon (+ indicator if installed)
+github-monitor service stop        # stop services
+github-monitor service restart     # restart services
+github-monitor service enable      # enable autostart on login
+github-monitor service disable     # disable autostart
+github-monitor service install     # install/update systemd unit files
+```
+
+These commands automatically manage both the daemon and indicator services
+when the indicator service file is installed.
+
+### Via systemctl (manual)
+
+#### Check status
 
 ```bash
 systemctl --user status github-monitor
@@ -216,22 +244,26 @@ systemctl --user disable github-monitor
 To update to the latest version:
 
 ```bash
-./update.sh
+pip install --upgrade github-monitor
+# or
+pipx upgrade github-monitor
 ```
 
-This pulls the latest code, re-installs the package, updates the systemd
-service file, and restarts the daemon. Your configuration is never touched.
+After updating, reinstall the service files to pick up any changes and restart:
 
-The script is git-aware -- it skips `git pull` if you have uncommitted changes
-or are on a non-main branch (unless you confirm).
+```bash
+github-monitor service install
+github-monitor service restart
+```
 
-To update manually instead:
+> **Note:** The `update.sh` script is deprecated. Use the commands above instead.
+
+To update manually from a git checkout instead:
 
 ```bash
 git pull
 uv tool install . --force --reinstall
-cp systemd/github-monitor.service ~/.config/systemd/user/
-systemctl --user daemon-reload
+github-monitor service install
 systemctl --user restart github-monitor
 ```
 
@@ -249,7 +281,7 @@ journalctl --user -u github-monitor -n 20 --no-pager
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `ExecStart not found` | `github-monitor` is not installed at `~/.local/bin/` | Install with `uv tool install .` or `pip install --user .`, or edit `ExecStart` to point to the correct path |
+| `ExecStart not found` / exit code 203 | `github-monitor` executable not found at the path in the service file | Re-run `github-monitor service install` to resolve the correct path, or edit `ExecStart` manually |
 | `ConfigError: github_token must be non-empty` | No token configured | Set the token via `Environment=GITHUB_TOKEN=...` in the service file, a drop-in, or the config file |
 | `ConfigError: ... config.toml not found` | Missing config file | Create `~/.config/github-monitor/config.toml` from `config.example.toml` |
 | `FileNotFoundError: notify-send` | `libnotify-bin` not installed | Install with `sudo apt install libnotify-bin` (notifications are optional — the daemon still runs) |
@@ -277,8 +309,10 @@ dbus-update-activation-environment --systemd DBUS_SESSION_BUS_ADDRESS
 
 ### Custom ExecStart path
 
-If `github-monitor` is installed in a virtualenv or non-standard location,
-edit the `ExecStart` line:
+`github-monitor service install` automatically resolves the executable path
+using `$PATH`, so it works with virtualenv, `uv`, `pipx`, and `pip install
+--user` installs alike. If you need to override the path manually, edit the
+installed service file:
 
 ```ini
 # Example: uv-managed virtualenv
@@ -341,9 +375,8 @@ The service file is located at `systemd/github-monitor-indicator.service`:
 ```ini
 [Unit]
 Description=GitHub PR Monitor - Panel Indicator
-After=graphical-session.target github-monitor.service
+After=github-monitor.service
 Wants=github-monitor.service
-PartOf=graphical-session.target
 
 [Service]
 Type=simple
@@ -357,39 +390,41 @@ ProtectSystem=strict
 ProtectHome=read-only
 
 [Install]
-WantedBy=graphical-session.target
+WantedBy=default.target
 ```
 
 #### Key differences from the daemon service
 
 | Aspect | Daemon | Indicator |
 |---|---|---|
-| `After` | `network-online.target dbus.service` | `graphical-session.target github-monitor.service` |
+| `After` | `network-online.target dbus.service` | `github-monitor.service` |
 | `Wants` | `network-online.target` | `github-monitor.service` |
-| `PartOf` | *(none)* | `graphical-session.target` |
-| `WantedBy` | `default.target` | `graphical-session.target` |
+| `WantedBy` | `default.target` | `default.target` |
 | `ReadWritePaths` | `%h/.config/github-monitor` | *(none — read-only is sufficient)* |
 
-The indicator uses `graphical-session.target` instead of `default.target`
-because it requires a running display server (GTK3). The `PartOf` directive
-means it is stopped when the graphical session ends. The `Wants` directive on
+Both services use `WantedBy=default.target` so they start reliably on login
+regardless of the desktop environment. Many DEs and window managers (especially
+tiling WMs and some Wayland compositors) never activate
+`graphical-session.target`, which would prevent the indicator from starting.
+The indicator has `Restart=on-failure`, so if it starts before the display
+server is ready it will automatically retry. The `Wants` directive on
 `github-monitor.service` ensures the daemon starts alongside the indicator, but
 the indicator still starts even if the daemon fails (the indicator auto-reconnects).
 
 ### Installing the indicator service
+
+`github-monitor setup` automatically detects GTK3/AppIndicator3 and installs
+the indicator service alongside the daemon. To install the indicator manually:
 
 ```bash
 # 1. Install the indicator package
 uv tool install '.[indicator]'
 # or: uv sync --extra indicator
 
-# 2. Copy the service file
-cp systemd/github-monitor-indicator.service ~/.config/systemd/user/
+# 2. Install service files (resolves executable path automatically)
+github-monitor service install
 
-# 3. Reload systemd
-systemctl --user daemon-reload
-
-# 4. Enable and start
+# 3. Enable and start
 systemctl --user enable --now github-monitor-indicator
 ```
 
@@ -413,7 +448,7 @@ systemctl --user stop github-monitor-indicator
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `ExecStart not found` | `github-monitor-indicator` not installed | Install with `uv tool install '.[indicator]'` |
+| `ExecStart not found` / exit code 203 | `github-monitor-indicator` not found | Re-run `github-monitor service install` or install with `uv tool install '.[indicator]'` |
 | `ERROR: GTK 3.0 typelib not found` | Missing GTK3 system packages | `sudo apt install python3-gi gir1.2-gtk-3.0` |
 | `ERROR: AppIndicator3 0.1 typelib not found` | Missing AppIndicator3 typelib | `sudo apt install gir1.2-appindicator3-0.1` |
 | `ERROR: 'gbulb' package not found` | Missing gbulb Python package | `uv sync --extra indicator` |
@@ -422,7 +457,20 @@ systemctl --user stop github-monitor-indicator
 
 ## Uninstallation
 
-### Daemon
+### Automated (recommended)
+
+```bash
+github-monitor uninstall
+```
+
+This stops and disables both services, removes systemd unit files and the
+legacy autostart entry, and optionally removes the config directory. If
+`systemctl` is not available, the stop/disable steps are skipped but file
+removal still proceeds.
+
+### Manual
+
+#### Daemon
 
 ```bash
 # Stop and disable the service
@@ -439,7 +487,7 @@ rm -rf ~/.config/systemd/user/github-monitor.service.d/
 systemctl --user daemon-reload
 ```
 
-### Indicator
+#### Indicator
 
 ```bash
 # Stop and disable the indicator service

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "github-monitor"
-version = "1.2.1"
+version = "1.3.0.dev3"
 description = "Daemon that monitors GitHub PRs and exposes state over D-Bus"
 readme = "README.md"
 license = "MIT"
@@ -90,8 +90,13 @@ ignore = [
     "SLF001",  # private member access is fine in tests
     "INP001",  # tests don't need __init__.py
     "ARG001",  # unused callback args are fine in tests (aioresponses callbacks)
+    "ARG002",  # unused method args from stacked @patch decorators must be present for injection
     "PLR0913", # test helpers often mirror dataclass constructors
     "ERA001",  # commented-out code used as section headers in tests
+]
+"github_monitor/cli/_systemd.py" = [
+    "S603",    # subprocess call with non-literal args — all args are internal constants
+    "S607",    # partial executable path — systemctl is a standard system binary
 ]
 
 [tool.ruff.format]

@@ -31,6 +31,10 @@ step()  { echo -e "\n${BOLD}[$1/$TOTAL_STEPS] $2${NC}"; }
 
 TOTAL_STEPS=5
 
+warn "DEPRECATED: This script is deprecated and will be removed in a future release."
+warn "            Use 'github-monitor setup' instead (after installing via pip/pipx)."
+echo ""
+
 CONFIG_DIR="${HOME}/.config/github-monitor"
 CONFIG_FILE="${CONFIG_DIR}/config.toml"
 SYSTEMD_USER_DIR="${HOME}/.config/systemd/user"

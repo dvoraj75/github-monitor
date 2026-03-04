@@ -32,6 +32,10 @@ step()  { echo -e "\n${BOLD}[$1/$TOTAL_STEPS] $2${NC}"; }
 
 TOTAL_STEPS=5
 
+warn "DEPRECATED: This script is deprecated and will be removed in a future release."
+warn "            Use 'pip install --upgrade github-monitor' or 'pipx upgrade github-monitor' instead."
+echo ""
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SYSTEMD_USER_DIR="${HOME}/.config/systemd/user"
 SERVICE_NAME="github-monitor"

@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from github_monitor.__main__ import main
+from github_monitor.__main__ import _build_parser, main
 from github_monitor.config import Config, ConfigError
 
 # ---------------------------------------------------------------------------
@@ -42,8 +42,8 @@ class TestMainHappyPath:
         mock_daemon_instance.stop = AsyncMock()
 
         with (
-            patch("github_monitor.__main__.load_config", return_value=config) as mock_load,
-            patch("github_monitor.__main__.Daemon", return_value=mock_daemon_instance) as mock_daemon_cls,
+            patch("github_monitor.config.load_config", return_value=config) as mock_load,
+            patch("github_monitor.daemon.Daemon", return_value=mock_daemon_instance) as mock_daemon_cls,
             patch("sys.argv", ["github-monitor"]),
         ):
             main()
@@ -69,8 +69,8 @@ class TestMainConfigFlag:
         mock_daemon.stop = AsyncMock()
 
         with (
-            patch("github_monitor.__main__.load_config", return_value=config) as mock_load,
-            patch("github_monitor.__main__.Daemon", return_value=mock_daemon),
+            patch("github_monitor.config.load_config", return_value=config) as mock_load,
+            patch("github_monitor.daemon.Daemon", return_value=mock_daemon),
             patch("sys.argv", ["github-monitor", "-c", "/opt/ghm/config.toml"]),
         ):
             main()
@@ -84,8 +84,8 @@ class TestMainConfigFlag:
         mock_daemon.stop = AsyncMock()
 
         with (
-            patch("github_monitor.__main__.load_config", return_value=config) as mock_load,
-            patch("github_monitor.__main__.Daemon", return_value=mock_daemon),
+            patch("github_monitor.config.load_config", return_value=config) as mock_load,
+            patch("github_monitor.daemon.Daemon", return_value=mock_daemon),
             patch("sys.argv", ["github-monitor", "--config", "/etc/ghm.toml"]),
         ):
             main()
@@ -108,8 +108,8 @@ class TestMainVerboseFlag:
         mock_daemon.stop = AsyncMock()
 
         with (
-            patch("github_monitor.__main__.load_config", return_value=config),
-            patch("github_monitor.__main__.Daemon", return_value=mock_daemon),
+            patch("github_monitor.config.load_config", return_value=config),
+            patch("github_monitor.daemon.Daemon", return_value=mock_daemon),
             patch("sys.argv", ["github-monitor", "-v"]),
             patch("logging.basicConfig") as mock_basic_config,
         ):
@@ -126,8 +126,8 @@ class TestMainVerboseFlag:
         mock_daemon.stop = AsyncMock()
 
         with (
-            patch("github_monitor.__main__.load_config", return_value=config),
-            patch("github_monitor.__main__.Daemon", return_value=mock_daemon),
+            patch("github_monitor.config.load_config", return_value=config),
+            patch("github_monitor.daemon.Daemon", return_value=mock_daemon),
             patch("sys.argv", ["github-monitor"]),
             patch("logging.basicConfig") as mock_basic_config,
         ):
@@ -147,7 +147,7 @@ class TestMainErrorHandling:
 
     def test_config_error_propagates(self) -> None:
         with (
-            patch("github_monitor.__main__.load_config", side_effect=ConfigError("bad config")),
+            patch("github_monitor.config.load_config", side_effect=ConfigError("bad config")),
             patch("sys.argv", ["github-monitor"]),
             pytest.raises(ConfigError, match="bad config"),
         ):
@@ -160,8 +160,8 @@ class TestMainErrorHandling:
         mock_daemon.stop = AsyncMock()
 
         with (
-            patch("github_monitor.__main__.load_config", return_value=config),
-            patch("github_monitor.__main__.Daemon", return_value=mock_daemon),
+            patch("github_monitor.config.load_config", return_value=config),
+            patch("github_monitor.daemon.Daemon", return_value=mock_daemon),
             patch("sys.argv", ["github-monitor"]),
             pytest.raises(RuntimeError, match="dbus failed"),
         ):
@@ -169,3 +169,100 @@ class TestMainErrorHandling:
 
         # stop() should still be called via finally
         mock_daemon.stop.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# Tests: CLI subcommand dispatch (Step 10/11)
+# ---------------------------------------------------------------------------
+
+
+class TestCliDispatch:
+    """main() should dispatch to cli.dispatch for known subcommands."""
+
+    def test_unified_help_includes_subcommands(self) -> None:
+        """--help output should mention all management subcommands."""
+        parser = _build_parser()
+        help_text = parser.format_help()
+        assert "setup" in help_text
+        assert "service" in help_text
+        assert "uninstall" in help_text
+
+    def test_unified_help_includes_daemon_flags(self) -> None:
+        parser = _build_parser()
+        help_text = parser.format_help()
+        assert "--config" in help_text
+        assert "--verbose" in help_text
+
+    @patch("github_monitor.cli.dispatch")
+    def test_dispatches_setup(self, mock_dispatch: MagicMock) -> None:
+        with patch("sys.argv", ["github-monitor", "setup"]):
+            main()
+        mock_dispatch.assert_called_once()
+        assert mock_dispatch.call_args[0][0].command == "setup"
+
+    @patch("github_monitor.cli.dispatch")
+    def test_dispatches_service(self, mock_dispatch: MagicMock) -> None:
+        with patch("sys.argv", ["github-monitor", "service", "status"]):
+            main()
+        mock_dispatch.assert_called_once()
+        args = mock_dispatch.call_args[0][0]
+        assert args.command == "service"
+        assert args.action == "status"
+
+    @patch("github_monitor.cli.dispatch")
+    def test_dispatches_uninstall(self, mock_dispatch: MagicMock) -> None:
+        with patch("sys.argv", ["github-monitor", "uninstall"]):
+            main()
+        mock_dispatch.assert_called_once()
+        assert mock_dispatch.call_args[0][0].command == "uninstall"
+
+    @patch("github_monitor.cli.dispatch")
+    def test_does_not_dispatch_for_daemon_flags(self, mock_dispatch: MagicMock) -> None:
+        """Daemon flags like -c and -v should NOT trigger CLI dispatch."""
+        config = _make_config()
+        mock_daemon = MagicMock()
+        mock_daemon.start = AsyncMock()
+        mock_daemon.stop = AsyncMock()
+
+        with (
+            patch("github_monitor.config.load_config", return_value=config),
+            patch("github_monitor.daemon.Daemon", return_value=mock_daemon),
+            patch("sys.argv", ["github-monitor", "-c", "config.toml"]),
+        ):
+            main()
+
+        mock_dispatch.assert_not_called()
+
+    @patch("github_monitor.cli.dispatch")
+    def test_does_not_dispatch_for_no_args(self, mock_dispatch: MagicMock) -> None:
+        """No arguments should run the daemon, not the CLI."""
+        config = _make_config()
+        mock_daemon = MagicMock()
+        mock_daemon.start = AsyncMock()
+        mock_daemon.stop = AsyncMock()
+
+        with (
+            patch("github_monitor.config.load_config", return_value=config),
+            patch("github_monitor.daemon.Daemon", return_value=mock_daemon),
+            patch("sys.argv", ["github-monitor"]),
+        ):
+            main()
+
+        mock_dispatch.assert_not_called()
+
+    @patch("github_monitor.cli.dispatch")
+    def test_does_not_dispatch_for_verbose_flag(self, mock_dispatch: MagicMock) -> None:
+        """The -v flag should run the daemon, not the CLI."""
+        config = _make_config()
+        mock_daemon = MagicMock()
+        mock_daemon.start = AsyncMock()
+        mock_daemon.stop = AsyncMock()
+
+        with (
+            patch("github_monitor.config.load_config", return_value=config),
+            patch("github_monitor.daemon.Daemon", return_value=mock_daemon),
+            patch("sys.argv", ["github-monitor", "-v"]),
+        ):
+            main()
+
+        mock_dispatch.assert_not_called()

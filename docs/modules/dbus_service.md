@@ -20,7 +20,7 @@ call methods to query PR state or trigger a refresh, and subscribe to the
 ### `_serialize_pr(pr: PullRequest) -> dict[str, Any]`
 
 Convert a single `PullRequest` to a JSON-serialisable dictionary with keys:
-`url`, `title`, `repo`, `author`, `number`, `updated_at` (ISO 8601 string),
+`url`, `title`, `repo`, `author`, `author_avatar_url`, `number`, `updated_at` (ISO 8601 string),
 `review_requested`, `assigned`.
 
 ### `_serialize_prs(prs: list[PullRequest]) -> str`
@@ -62,6 +62,7 @@ Return a JSON array of all currently tracked PRs. Each element contains:
     "title": "Fix bug",
     "repo": "owner/repo",
     "author": "username",
+    "author_avatar_url": "https://avatars.githubusercontent.com/u/12345",
     "number": 42,
     "updated_at": "2025-01-15T10:30:00+00:00",
     "review_requested": true,

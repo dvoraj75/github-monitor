@@ -158,6 +158,38 @@ modules. It consists of:
 
 See [modules/indicator.md](modules/indicator.md) for the full API reference.
 
+### CLI Management (`cli/`)
+
+A management interface providing `setup`, `service`, and `uninstall`
+subcommands for installing and managing github-monitor as a systemd user
+service. Uses stdlib only (no extra dependencies beyond the Python standard
+library). The package consists of:
+
+- **Parser and dispatch** (`__init__.py`) -- argparse subcommand parser with
+  lazy imports to avoid loading unused code.
+- **Setup wizard** (`setup.py`) -- interactive configuration (token, username,
+  poll interval, repos), systemd service installation, and enable + start.
+  Supports `--config-only` and `--service-only` flags.
+- **Service management** (`service.py`) -- thin CLI layer over systemd
+  operations. Wraps install, start, stop, restart, status, enable, and disable.
+  Automatically manages the indicator service when its unit file is installed.
+- **Uninstall** (`uninstall.py`) -- stops and disables services, removes
+  systemd unit files and the legacy autostart entry, optionally removes the
+  config directory.
+- **Shared helpers** (`_output.py`, `_prompts.py`, `_checks.py`, `_systemd.py`)
+  -- coloured terminal output, interactive prompts with validation, system
+  dependency checks (notify-send, D-Bus, GTK, systemctl), and all systemd
+  interactions via `subprocess.run()`.
+- **Bundled service files** (`systemd/`) -- `.service` files accessed via
+  `importlib.resources`, allowing installation from PyPI packages without a git
+  checkout.
+
+Subcommand detection happens in `__main__.py` by checking `sys.argv[1]`
+against a known set of command names before the daemon argparse runs, ensuring
+full backward compatibility with existing daemon flags (`-c`, `-v`).
+
+See [modules/cli.md](modules/cli.md) for the full API reference.
+
 ### Daemon (`daemon.py`)
 
 The main orchestrator. Wires together all components: loads config, starts the
