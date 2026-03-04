@@ -375,6 +375,34 @@ class TestReloadConfig:
 
         mock_load.assert_called_once_with(None)
 
+    async def test_reload_sets_reload_event(self) -> None:
+        """Successful reload should set the reload event to wake the poll loop."""
+        daemon = Daemon(_make_config())
+        new_config = _make_config(poll_interval=60)
+        daemon.client.close = AsyncMock()  # type: ignore[method-assign]
+        daemon.client.start = AsyncMock()  # type: ignore[method-assign]
+
+        assert not daemon._reload_event.is_set()
+
+        with patch("github_monitor.daemon.load_config", return_value=new_config):
+            await daemon._reload_config()
+
+        assert daemon._reload_event.is_set()
+
+    async def test_failed_reload_does_not_set_event(self) -> None:
+        """If _reload_config fails, the reload event should NOT be set."""
+        daemon = Daemon(_make_config())
+
+        assert not daemon._reload_event.is_set()
+
+        with (
+            patch("github_monitor.daemon.load_config", side_effect=FileNotFoundError("missing")),
+            patch("github_monitor.daemon.logger"),
+        ):
+            await daemon._reload_config()
+
+        assert not daemon._reload_event.is_set()
+
 
 # ---------------------------------------------------------------------------
 # Tests: reload signal handler
@@ -602,6 +630,63 @@ class TestPollLoop:
         # Should have polled 3 times: first two via TimeoutError → continue,
         # third poll sets shutdown event → break
         assert poll_count == 3
+
+    async def test_reload_event_wakes_poll_loop_immediately(self) -> None:
+        """Reload event should interrupt the sleep and trigger an immediate re-poll."""
+        daemon = Daemon(_make_config(poll_interval=3600))
+        poll_count = 0
+
+        async def poll_then_schedule_reload() -> None:
+            nonlocal poll_count
+            poll_count += 1
+
+            if poll_count == 1:
+                # Schedule reload after a tiny delay — should NOT wait 3600s
+                async def delayed_reload() -> None:
+                    await asyncio.sleep(0.05)
+                    daemon._reload_event.set()
+
+                asyncio.get_running_loop().create_task(delayed_reload())
+            elif poll_count >= 2:
+                # Second poll happened (triggered by reload wake) — shut down
+                daemon._handle_shutdown()
+
+        daemon._running = True
+        daemon._poll_once = poll_then_schedule_reload  # type: ignore[method-assign]
+
+        # This should complete in ~0.05s, NOT 3600s
+        await asyncio.wait_for(daemon._poll_loop(), timeout=2.0)
+
+        # Should have polled twice: once normally, once after reload woke the loop
+        assert poll_count == 2
+
+    async def test_reload_event_cleared_after_wake(self) -> None:
+        """Reload event should be cleared after waking so it doesn't retrigger."""
+        daemon = Daemon(_make_config(poll_interval=3600))
+        poll_count = 0
+
+        async def poll_then_check() -> None:
+            nonlocal poll_count
+            poll_count += 1
+
+            if poll_count == 1:
+
+                async def trigger_reload() -> None:
+                    await asyncio.sleep(0.05)
+                    daemon._reload_event.set()
+
+                asyncio.get_running_loop().create_task(trigger_reload())
+            elif poll_count == 2:
+                # After the reload wake, the event should be cleared
+                assert not daemon._reload_event.is_set()
+                daemon._handle_shutdown()
+
+        daemon._running = True
+        daemon._poll_once = poll_then_check  # type: ignore[method-assign]
+
+        await asyncio.wait_for(daemon._poll_loop(), timeout=2.0)
+
+        assert poll_count == 2
 
 
 # ---------------------------------------------------------------------------

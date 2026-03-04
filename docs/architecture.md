@@ -165,15 +165,16 @@ poller, runs poll cycles on a timer, feeds results into the state store, trigger
 notifications and D-Bus signals on diffs, and handles Unix signals (SIGTERM /
 SIGINT for shutdown, SIGHUP for config reload).
 
-The poll loop uses `asyncio.Event.wait(timeout=poll_interval)` instead of
-`asyncio.sleep` so that shutdown is immediate rather than waiting for the current
-sleep to finish. First-poll notifications are suppressed by default to avoid
-notification spam on startup (configurable via `notify_on_first_poll`). The D-Bus
-signal still fires so panel plugins can populate state. D-Bus setup is
-conditional on `dbus_enabled`, allowing the daemon to run in environments where
-D-Bus is unavailable. On SIGHUP, the daemon reloads the config file (respecting
-the original `-c` path), applies the new log level immediately, and restarts the
-HTTP session to pick up new token/headers.
+The poll loop uses `asyncio.wait()` with two event tasks (shutdown and reload)
+instead of `asyncio.sleep` so that both shutdown and config reload are immediate
+rather than waiting for the current sleep to finish. First-poll notifications are
+suppressed by default to avoid notification spam on startup (configurable via
+`notify_on_first_poll`). The D-Bus signal still fires so panel plugins can
+populate state. D-Bus setup is conditional on `dbus_enabled`, allowing the daemon
+to run in environments where D-Bus is unavailable. On SIGHUP, the daemon reloads
+the config file (respecting the original `-c` path), applies the new log level
+immediately, restarts the HTTP session to pick up new token/headers, and wakes
+the poll loop for an immediate re-poll with the new configuration.
 
 See [modules/daemon.md](modules/daemon.md) for the full API reference.
 
@@ -263,7 +264,7 @@ clean async Python interface.
 
 All I/O in this daemon is either network (GitHub API) or IPC (D-Bus). asyncio
 is the natural fit: `aiohttp` for HTTP, `dbus-next` for D-Bus, and
-`asyncio.sleep` for the poll timer. There are no CPU-bound tasks.
+`asyncio.wait` for the poll timer (with event-based wake). There are no CPU-bound tasks.
 
 ### Why `dataclass + tomllib` instead of pydantic?
 
@@ -302,4 +303,4 @@ error and continues with the next poll cycle.
 | Signal | Behavior |
 |---|---|
 | `SIGTERM` / `SIGINT` | Graceful shutdown: set stop event, close HTTP session, unexport D-Bus, exit |
-| `SIGHUP` | Reload configuration from disk, restart HTTP session, update poller settings |
+| `SIGHUP` | Reload configuration from disk, restart HTTP session, update poller settings, wake poll loop for immediate re-poll |

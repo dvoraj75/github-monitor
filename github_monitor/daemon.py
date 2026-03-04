@@ -58,6 +58,7 @@ class Daemon:
         self._running = False
         self._first_poll = True
         self._shutdown_event = asyncio.Event()
+        self._reload_event = asyncio.Event()
 
     # -- public lifecycle ----------------------------------------------------
 
@@ -107,17 +108,26 @@ class Daemon:
         """
         while self._running:
             await self._poll_once()
-            # Wait for poll_interval OR early wake-up from shutdown
+
+            shutdown_task = asyncio.create_task(self._shutdown_event.wait())
+            reload_task = asyncio.create_task(self._reload_event.wait())
             try:
-                await asyncio.wait_for(
-                    self._shutdown_event.wait(),
+                done, _ = await asyncio.wait(
+                    {shutdown_task, reload_task},
                     timeout=self.config.poll_interval,
+                    return_when=asyncio.FIRST_COMPLETED,
                 )
-                # Event was set → shutdown requested
+            finally:
+                for t in (shutdown_task, reload_task):
+                    if not t.done():
+                        t.cancel()
+                await asyncio.gather(shutdown_task, reload_task, return_exceptions=True)
+
+            if shutdown_task in done:
                 break
-            except TimeoutError:
-                # Normal timeout → time for next poll cycle
-                continue
+
+            if reload_task in done:
+                self._reload_event.clear()
 
     async def _poll_once(self) -> None:
         """Single poll cycle: fetch -> diff -> notify -> signal."""
@@ -202,6 +212,7 @@ class Daemon:
                 max_retries=self.config.max_retries,
             )
             await self.client.start()
+            self._reload_event.set()
             logger.info("Config reloaded successfully")
         except Exception:
             logger.exception("Failed to reload config")

@@ -287,7 +287,9 @@ raise ConfigError(f"poll_interval must be >= {minimum}, got {value}")
   `close()`
 - Use `asyncio.gather()` for concurrent operations (e.g., running both search
   queries)
-- Use `asyncio.sleep()` for waits (rate limit, poll interval)
+- Use `asyncio.sleep()` for simple waits (e.g., rate limit backoff)
+- The poll interval uses `asyncio.wait()` with event tasks for immediate
+  wake on shutdown or config reload
 
 ## Testing
 
