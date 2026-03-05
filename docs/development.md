@@ -23,7 +23,7 @@ ruff, mypy, etc.).
 
 ```
 github_monitor/          # Main package
-├── __init__.py          # __version__ = "1.3.0.dev2"
+├── __init__.py          # __version__ = "1.3.0"
 ├── __main__.py          # Entry point -- dispatches to CLI subcommands or daemon
 ├── config.py            # Config loading + validation
 ├── poller.py            # GitHub API client
