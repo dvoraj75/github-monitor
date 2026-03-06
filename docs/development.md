@@ -23,7 +23,7 @@ ruff, mypy, etc.).
 
 ```
 github_monitor/          # Main package
-├── __init__.py          # __version__ = "1.3.0"
+├── __init__.py          # __version__ (from package metadata)
 ├── __main__.py          # Entry point -- dispatches to CLI subcommands or daemon
 ├── config.py            # Config loading + validation
 ├── poller.py            # GitHub API client
@@ -50,7 +50,7 @@ github_monitor/          # Main package
     ├── tray.py          # AppIndicator3 system tray icon
     ├── window.py        # GTK3 popup window with PR list
     ├── models.py        # PRInfo + DaemonStatus dataclasses
-    ├── _tray_state.py   # Pure icon/label logic (no GTK imports)
+    ├── _tray_state.py   # Pure icon/label/tooltip logic (no GTK imports)
     ├── _window_helpers.py  # Pure helpers (relative time, sorting, escaping)
     └── resources/       # Tray icon image files
 

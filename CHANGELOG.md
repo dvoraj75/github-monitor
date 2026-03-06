@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1.dev] - Unreleased
+
+### Added
+
+- Dynamic tooltip on the tray icon showing connection state, open PR count, and review-requested status (via `get_tooltip()` in `_tray_state.py`)
+
+### Changed
+
+- Version is now read from package metadata (`importlib.metadata.version()`) instead of being hardcoded in `__init__.py`
+
+### Fixed
+
+- Indicator tests (`test_indicator_tray.py`, `test_indicator_window.py`) failing on systems with GTK installed — `gi` module stubs now always override `sys.modules` instead of being skipped when the real `gi` is present
+
 ## [1.3.0] - 2026-03-05
 
 ### Added

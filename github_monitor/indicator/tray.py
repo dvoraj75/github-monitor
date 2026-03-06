@@ -18,7 +18,7 @@ gi.require_version("Gtk", "3.0")
 
 from gi.repository import AppIndicator3, Gtk  # noqa: E402
 
-from ._tray_state import Icon, get_icon_name, get_label  # noqa: E402
+from ._tray_state import Icon, get_icon_name, get_label, get_tooltip  # noqa: E402
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -99,16 +99,22 @@ class TrayIcon:
     # -- internal ----------------------------------------------------------
 
     def _apply_state(self) -> None:
-        """Recompute icon and label from the current internal state."""
+        """Recompute icon, label, and tooltip from the current internal state."""
         icon_name = get_icon_name(
             self._count,
             has_review_requested=self._has_review_requested,
             connected=self._connected,
         )
         label = get_label(self._count)
+        tooltip = get_tooltip(
+            self._count,
+            has_review_requested=self._has_review_requested,
+            connected=self._connected,
+        )
 
         self._indicator.set_icon_full(icon_name, "GitHub Monitor")
         self._indicator.set_label(label, "")
+        self._indicator.set_title(tooltip)
 
     def _build_menu(self) -> tuple[Gtk.Menu, Gtk.MenuItem]:
         """Build the GTK menu attached to the indicator.

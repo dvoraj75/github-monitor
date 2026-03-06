@@ -139,7 +139,8 @@ modules. It consists of:
   `PullRequestsChanged` signal for live updates, and auto-reconnects when the
   daemon disappears.
 - **Tray icon** (`tray.py`) -- AppIndicator3-based system tray icon with a PR
-  count label and colour-coded icons (neutral, active, alert, disconnected).
+  count label, colour-coded icons (neutral, active, alert, disconnected), and
+  a dynamic tooltip showing the current PR count and review status.
   Icons are loaded from `resources/light/` or `resources/dark/` depending on
   the configured `icon_theme`, allowing proper visibility on both light and
   dark desktop panels. Provides a GTK menu with Show/Hide PRs, Refresh, and
@@ -152,9 +153,9 @@ modules. It consists of:
   for data received from the daemon. These are intentionally separate from the
   daemon's `PullRequest` dataclass to maintain process boundary isolation.
 - **Pure helpers** (`_tray_state.py`, `_window_helpers.py`) -- stateless
-  functions for icon selection, label formatting, relative time, PR sorting,
-  and Pango markup escaping. These have zero GTK imports and are fully
-  unit-testable without system packages.
+  functions for icon selection, label formatting, tooltip text, relative time,
+  PR sorting, and Pango markup escaping. These have zero GTK imports and are
+  fully unit-testable without system packages.
 
 See [modules/indicator.md](modules/indicator.md) for the full API reference.
 
@@ -251,8 +252,8 @@ the session bus:
 4. _handle_prs_changed()
    ├── DaemonClient.get_status() → DaemonStatus (pr_count, last_updated)
    └── _update_ui(prs, status)
-        ├── TrayIcon.set_pr_count()     → update label + icon colour
-        └── PRWindow.update_prs()       → rebuild scrollable PR list + footer
+         ├── TrayIcon.set_pr_count()     → update label + icon colour + tooltip
+         └── PRWindow.update_prs()       → rebuild scrollable PR list + footer
 ```
 
 On-demand refresh follows a similar path: the user clicks "Refresh" in the
