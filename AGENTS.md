@@ -48,7 +48,7 @@ indicator/               Separate process -- system tray icon + popup window
     +---> tray.py        AppIndicator3 tray icon with PR count label
     +---> window.py      GTK3 popup window with scrollable PR list
     +---> models.py      PRInfo + DaemonStatus frozen dataclasses
-    +---> _tray_state.py     Pure state logic (icon selection, label formatting)
+    +---> _tray_state.py     Pure state logic (icon selection, label formatting, tooltip text)
     +---> _window_helpers.py Pure helpers (relative time, sorting, markup escaping)
 ```
 
@@ -78,7 +78,7 @@ indicator/               Separate process -- system tray icon + popup window
 | `indicator/tray.py` | `TrayIcon` -- AppIndicator3 system tray icon with PR count label, colour-coded icons, and a GTK menu (Show/Hide PRs, Refresh, Quit). |
 | `indicator/window.py` | `PRWindow` -- GTK3 popup window with header, scrollable PR list (clickable rows), and status footer. |
 | `indicator/models.py` | `PRInfo` and `DaemonStatus` frozen dataclasses for data received from the daemon over D-Bus. |
-| `indicator/_tray_state.py` | Pure functions for icon name selection and label formatting. No GTK imports -- testable without system packages. |
+| `indicator/_tray_state.py` | Pure functions for icon name selection, label formatting, and tooltip text. No GTK imports -- testable without system packages. |
 | `indicator/_window_helpers.py` | Pure functions for relative time formatting, PR sorting, status text, and Pango markup escaping. No GTK imports. |
 
 ## Tech Stack

@@ -21,7 +21,7 @@ for installation instructions.
 | `tray.py` | AppIndicator3 system tray icon with PR count label and GTK menu |
 | `window.py` | GTK3 popup window with scrollable PR list and status footer |
 | `models.py` | `PRInfo` and `DaemonStatus` frozen dataclasses |
-| `_tray_state.py` | Pure functions for icon name selection and label formatting (no GTK imports) |
+| `_tray_state.py` | Pure functions for icon name selection, label formatting, and tooltip text (no GTK imports) |
 | `_window_helpers.py` | Pure functions for relative time, sorting, status text, markup escaping (no GTK imports) |
 
 ---
@@ -358,7 +358,9 @@ def set_pr_count(self, count: int, *, has_review_requested: bool) -> None:
 ```
 
 Update the displayed PR count and icon state. Recalculates the icon name
-(via `_tray_state.get_icon_name()`) and label (via `_tray_state.get_label()`).
+(via `_tray_state.get_icon_name()`), label (via `_tray_state.get_label()`),
+and tooltip (via `_tray_state.get_tooltip()`). The tooltip is set via
+`AppIndicator3.Indicator.set_title()` and is shown on mouse hover.
 
 #### `set_connected(*, connected)`
 
@@ -531,6 +533,33 @@ def get_label(count: int) -> str:
 
 Format the tray label from a PR count. Returns an empty string for zero
 (no label shown), otherwise the count as a string.
+
+### `get_tooltip()`
+
+```python
+def get_tooltip(count: int, *, has_review_requested: bool, connected: bool) -> str:
+```
+
+Build a dynamic tooltip string for the tray icon. The tooltip is displayed
+when the user hovers over the tray icon (via `AppIndicator3.Indicator.set_title()`).
+
+**Parameters:**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `count` | `int` | Current PR count |
+| `has_review_requested` | `bool` | Whether any PR has `review_requested=True` |
+| `connected` | `bool` | Whether the indicator is connected to the daemon |
+
+**Return values:**
+
+| Condition | Example output |
+|---|---|
+| Not connected | `"GitHub Monitor — Disconnected"` |
+| Zero PRs | `"GitHub Monitor — No open PRs"` |
+| 1 PR, no review | `"GitHub Monitor — 1 open PR"` |
+| Multiple PRs, no review | `"GitHub Monitor — 3 open PRs"` |
+| PRs with review requested | `"GitHub Monitor — 3 open PRs (review requested)"` |
 
 ---
 

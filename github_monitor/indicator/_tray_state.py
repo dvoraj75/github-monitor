@@ -44,3 +44,24 @@ def get_label(count: int) -> str:
     if count == 0:
         return ""
     return str(count)
+
+
+def get_tooltip(count: int, *, has_review_requested: bool, connected: bool) -> str:
+    """Build a dynamic tooltip string for the tray icon.
+
+    Examples:
+    - ``"GitHub Monitor — Disconnected"``
+    - ``"GitHub Monitor — No open PRs"``
+    - ``"GitHub Monitor — 1 open PR"``
+    - ``"GitHub Monitor — 3 open PRs"``
+    - ``"GitHub Monitor — 3 open PRs (review requested)"``
+    """
+    if not connected:
+        return "GitHub Monitor \u2014 Disconnected"
+    if count == 0:
+        return "GitHub Monitor \u2014 No open PRs"
+    pr_word = "PR" if count == 1 else "PRs"
+    base = f"GitHub Monitor \u2014 {count} open {pr_word}"
+    if has_review_requested:
+        return f"{base} (review requested)"
+    return base

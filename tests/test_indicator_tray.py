@@ -11,7 +11,7 @@ from __future__ import annotations
 import sys
 from unittest.mock import MagicMock
 
-from github_monitor.indicator._tray_state import get_icon_name, get_label
+from github_monitor.indicator._tray_state import get_icon_name, get_label, get_tooltip
 
 # ---------------------------------------------------------------------------
 # get_icon_name
@@ -86,15 +86,75 @@ class TestGetLabel:
 
 
 # ---------------------------------------------------------------------------
+# get_tooltip
+# ---------------------------------------------------------------------------
+
+
+class TestGetTooltip:
+    """Tooltip text based on count, review, and connection state."""
+
+    def test_disconnected(self) -> None:
+        """Disconnected state always shows 'Disconnected'."""
+        result = get_tooltip(5, has_review_requested=True, connected=False)
+
+        assert result == "GitHub Monitor \u2014 Disconnected"
+
+    def test_disconnected_zero_prs(self) -> None:
+        """Disconnected with zero PRs still shows 'Disconnected'."""
+        result = get_tooltip(0, has_review_requested=False, connected=False)
+
+        assert result == "GitHub Monitor \u2014 Disconnected"
+
+    def test_zero_prs_connected(self) -> None:
+        """Zero PRs with a live connection shows 'No open PRs'."""
+        result = get_tooltip(0, has_review_requested=False, connected=True)
+
+        assert result == "GitHub Monitor \u2014 No open PRs"
+
+    def test_single_pr_no_review(self) -> None:
+        """Single PR without review uses singular 'PR'."""
+        result = get_tooltip(1, has_review_requested=False, connected=True)
+
+        assert result == "GitHub Monitor \u2014 1 open PR"
+
+    def test_multiple_prs_no_review(self) -> None:
+        """Multiple PRs without review uses plural 'PRs'."""
+        result = get_tooltip(3, has_review_requested=False, connected=True)
+
+        assert result == "GitHub Monitor \u2014 3 open PRs"
+
+    def test_single_pr_with_review(self) -> None:
+        """Single PR with review requested appends the review suffix."""
+        result = get_tooltip(1, has_review_requested=True, connected=True)
+
+        assert result == "GitHub Monitor \u2014 1 open PR (review requested)"
+
+    def test_multiple_prs_with_review(self) -> None:
+        """Multiple PRs with review requested appends the review suffix."""
+        result = get_tooltip(5, has_review_requested=True, connected=True)
+
+        assert result == "GitHub Monitor \u2014 5 open PRs (review requested)"
+
+    def test_zero_prs_with_review_flag(self) -> None:
+        """Zero PRs with review flag (edge case) shows 'No open PRs'."""
+        result = get_tooltip(0, has_review_requested=True, connected=True)
+
+        assert result == "GitHub Monitor \u2014 No open PRs"
+
+
+# ---------------------------------------------------------------------------
 # Stub out GTK / AppIndicator3 so tray.py is importable in CI
 # ---------------------------------------------------------------------------
 
 _gi_stub = MagicMock()
 _gi_stub.require_version = MagicMock()
 
+# Always override — real gi may already be loaded on GTK-enabled systems.
 for _mod in ("gi", "gi.repository"):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = _gi_stub  # type: ignore[assignment]
+    sys.modules[_mod] = _gi_stub  # type: ignore[assignment]
+
+# Evict any cached import so tray.py re-imports with the stubbed gi.
+sys.modules.pop("github_monitor.indicator.tray", None)
 
 from github_monitor.indicator.tray import TrayIcon  # noqa: E402
 
@@ -145,9 +205,10 @@ class TestTrayIconSetPrCount:
 
         assert tray._count == 5
         assert tray._has_review_requested is True
-        # set_icon_full and set_label should have been called
+        # set_icon_full, set_label, and set_title should have been called
         tray._indicator.set_icon_full.assert_called()
         tray._indicator.set_label.assert_called()
+        tray._indicator.set_title.assert_called()
 
     def test_zero_count_shows_neutral_icon(self) -> None:
         tray = TrayIcon(MagicMock(), MagicMock(), MagicMock())
@@ -158,6 +219,8 @@ class TestTrayIconSetPrCount:
         # Last call to set_icon_full should use the neutral icon name
         icon_call = tray._indicator.set_icon_full.call_args
         assert icon_call[0][0] == "github-monitor"
+        # Tooltip should reflect zero PRs
+        tray._indicator.set_title.assert_called_with("GitHub Monitor \u2014 No open PRs")
 
     def test_review_requested_shows_alert_icon(self) -> None:
         tray = TrayIcon(MagicMock(), MagicMock(), MagicMock())
@@ -167,6 +230,8 @@ class TestTrayIconSetPrCount:
 
         icon_call = tray._indicator.set_icon_full.call_args
         assert icon_call[0][0] == "github-monitor-alert"
+        # Tooltip should include the review-requested suffix
+        tray._indicator.set_title.assert_called_with("GitHub Monitor \u2014 3 open PRs (review requested)")
 
 
 # ---------------------------------------------------------------------------
@@ -184,6 +249,7 @@ class TestTrayIconSetConnected:
 
         assert tray._connected is True
         tray._indicator.set_icon_full.assert_called()
+        tray._indicator.set_title.assert_called_with("GitHub Monitor \u2014 No open PRs")
 
     def test_disconnected_shows_disconnected_icon(self) -> None:
         tray = TrayIcon(MagicMock(), MagicMock(), MagicMock())
@@ -192,6 +258,7 @@ class TestTrayIconSetConnected:
 
         icon_call = tray._indicator.set_icon_full.call_args
         assert icon_call[0][0] == "github-monitor-disconnected"
+        tray._indicator.set_title.assert_called_with("GitHub Monitor \u2014 Disconnected")
 
 
 # ---------------------------------------------------------------------------
