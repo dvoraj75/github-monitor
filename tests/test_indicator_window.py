@@ -317,9 +317,12 @@ class TestDaemonStatusModel:
 _gi_stub = MagicMock()
 _gi_stub.require_version = MagicMock()
 
+# Always override — real gi may already be loaded on GTK-enabled systems.
 for _mod in ("gi", "gi.repository"):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = _gi_stub  # type: ignore[assignment]
+    sys.modules[_mod] = _gi_stub  # type: ignore[assignment]
+
+# Evict any cached import so window.py re-imports with the stubbed gi.
+sys.modules.pop("github_monitor.indicator.window", None)
 
 from github_monitor.indicator.window import PRWindow  # noqa: E402
 
