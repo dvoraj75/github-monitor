@@ -25,9 +25,9 @@ import pytest
 _gi_stub = MagicMock()
 _gi_stub.require_version = MagicMock()
 
+# Always override — real gi may already be loaded on GTK-enabled systems.
 for _mod in ("gi", "gi.repository"):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = _gi_stub  # type: ignore[assignment]
+    sys.modules[_mod] = _gi_stub  # type: ignore[assignment]
 
 from github_monitor.indicator.models import DaemonStatus, PRInfo  # noqa: E402
 
