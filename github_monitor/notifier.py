@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
-import tempfile
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -36,8 +36,8 @@ _BATCH_BODY_LIMIT = 5
 # Avatar size in pixels (appended as ?s=N to GitHub avatar URL)
 _AVATAR_SIZE = 64
 
-# Directory for cached avatar files
-_AVATAR_CACHE_DIR = Path(tempfile.gettempdir()) / "github-monitor-avatars"
+# Directory for cached avatar files — use XDG_CACHE_HOME (default ~/.cache)
+_AVATAR_CACHE_DIR = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "github-monitor" / "avatars"
 
 # In-memory cache: avatar_url -> local file path
 _avatar_cache: dict[str, Path] = {}
