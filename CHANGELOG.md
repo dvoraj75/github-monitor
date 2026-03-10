@@ -5,12 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.4.0.dev1] - Unreleased
+## [1.4.0.dev2] - Unreleased
+
+### Added
+
+- GitHub Actions publish workflow (`publish.yml`) for automated PyPI and TestPyPI publishing using OIDC Trusted Publishing — no API tokens required
+- Made CI workflow (`ci.yml`) reusable via `workflow_call` trigger so the publish pipeline can gate on lint + tests without duplicating steps
+- Automatic dev version stamping (`x.y.z.devN`) on develop branch pushes, using the CI run number for unique TestPyPI uploads
+- Path-filtered publish trigger — only `forgewatch/**`, `pyproject.toml`, and `uv.lock` changes on `develop` trigger the publish pipeline
 
 ### Changed
 
 - **Rebrand**: renamed project from `github-monitor` to `forgewatch` — Python package (`github_monitor` -> `forgewatch`), CLI entry points, D-Bus bus name (`org.forgewatch.Daemon`), systemd service files, config directory (`~/.config/forgewatch/`), icon resources, and all metadata
 - Removed deprecated shell scripts (`install.sh`, `update.sh`, `uninstall.sh`) — replaced by CLI subcommands in v1.3.0
+- Coverage comment step in CI now conditional on `pull_request` events to avoid failures when called from the publish pipeline
 
 ### Fixed
 
