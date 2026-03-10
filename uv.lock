@@ -339,15 +339,11 @@ wheels = [
 
 [[package]]
 name = "forgewatch"
-version = "1.4.0.dev2"
+version = "1.4.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
     { name = "dbus-next" },
-]
-
-[package.optional-dependencies]
-indicator = [
     { name = "gbulb" },
 ]
 
@@ -368,9 +364,8 @@ dev = [
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.9,<4" },
     { name = "dbus-next", specifier = ">=0.2.3,<1" },
-    { name = "gbulb", marker = "extra == 'indicator'", specifier = ">=0.6" },
+    { name = "gbulb", specifier = ">=0.6" },
 ]
-provides-extras = ["indicator"]
 
 [package.metadata.requires-dev]
 dev = [

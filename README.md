@@ -1,363 +1,123 @@
+<div align="center">
+
+<!-- PLACEHOLDER: Project logo (recommended ~200px height, transparent background PNG or SVG) -->
+<!-- Replace with your logo file when ready -->
+<img src="docs/assets/logo.png" alt="ForgeWatch logo" width="200">
+
 # ForgeWatch
 
-![CI](https://github.com/dvoraj75/forgewatch/actions/workflows/ci.yml/badge.svg) ![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue) ![License: MIT](https://img.shields.io/badge/license-MIT-green) ![Code style: Ruff](https://img.shields.io/badge/code%20style-ruff-000000) ![Type checked: mypy](https://img.shields.io/badge/type%20checked-mypy-blue) ![Async](https://img.shields.io/badge/async-asyncio-purple)
+**Monitor your GitHub pull requests. Get notified instantly.**
 
-A Python daemon that polls GitHub for pull requests assigned to you (as reviewer
-or assignee), holds state in memory, exposes it over D-Bus, and sends desktop
-notifications when new PRs arrive.
+An async Python daemon that watches GitHub for PRs assigned to you,
+sends desktop notifications, and shows live status in your system tray.
+
+[![CI](https://github.com/dvoraj75/forgewatch/actions/workflows/ci.yml/badge.svg)](https://github.com/dvoraj75/forgewatch/actions/workflows/ci.yml)
+[![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Code style: Ruff](https://img.shields.io/badge/code%20style-ruff-000000)](https://docs.astral.sh/ruff/)
+[![Type checked: mypy](https://img.shields.io/badge/type%20checked-mypy-blue)](https://mypy-lang.org/)
+[![Async](https://img.shields.io/badge/async-asyncio-purple)](https://docs.python.org/3/library/asyncio.html)
+
+</div>
+
+---
+
+## Screenshots
+
+<!-- PLACEHOLDER: Replace these with actual screenshots when ready -->
+
+<table>
+<tr>
+<td width="50%">
+
+**Desktop notifications**
+
+Individual notifications with author avatars and clickable links when new PRs arrive.
+
+<!-- PLACEHOLDER: Screenshot of a desktop notification popup showing PR details -->
+<!-- Recommended: ~500px wide, PNG -->
+<img src="docs/assets/notification.png" alt="Desktop notification showing a new pull request" width="100%">
+
+</td>
+<td width="50%">
+
+**System tray indicator**
+
+Live PR count in your panel with colour-coded status icons.
+
+<!-- PLACEHOLDER: Screenshot of the system tray area showing the ForgeWatch icon with PR count -->
+<!-- Recommended: ~500px wide, PNG, show the tray icon in context of the desktop panel -->
+<img src="docs/assets/tray-indicator.png" alt="System tray indicator showing PR count" width="100%">
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**PR list popup**
+
+Click the tray icon to see all your PRs at a glance. Click any PR to open it in your browser.
+
+<!-- PLACEHOLDER: Screenshot of the GTK popup window showing a list of pull requests -->
+<!-- Recommended: ~500px wide, PNG, show the popup with a few PRs listed -->
+<img src="docs/assets/popup-window.png" alt="Popup window listing open pull requests" width="100%">
+
+</td>
+<td width="50%">
+
+**Setup wizard**
+
+Interactive CLI walks you through configuration and systemd service setup.
+
+<!-- PLACEHOLDER: Screenshot of terminal running `forgewatch setup` -->
+<!-- Recommended: ~500px wide, PNG, show the coloured terminal output of the setup wizard -->
+<img src="docs/assets/setup-wizard.png" alt="Terminal showing the interactive setup wizard" width="100%">
+
+</td>
+</tr>
+</table>
+
+---
 
 ## Features
 
-- **Live PR monitoring** -- polls GitHub Search API for PRs assigned to you or requesting your review
-- **Desktop notifications** -- individual notifications for small batches with author avatars and clickable links; summary for larger batches (configurable threshold)
-- **System tray indicator** -- optional panel icon with live PR count, colour-coded status, and a popup window listing all PRs (click to open in browser)
-- **D-Bus interface** -- query current PR state, trigger manual refresh, subscribe to change signals (can be disabled)
-- **GitHub Enterprise support** -- configurable API base URL
-- **Systemd integration** -- runs as a user service with security hardening and `systemctl reload` support; optional companion service for the indicator
-- **Resilient** -- exponential backoff with configurable retries, rate limit handling, graceful shutdown via signals (SIGTERM, SIGHUP for config reload)
-- **Runtime configurable** -- log level, notification behaviour, D-Bus toggle, and more can be changed via config reload
+- **Live PR monitoring** -- polls the GitHub Search API for PRs assigned to you or requesting your review
+- **Desktop notifications** -- individual notifications for small batches with author avatars and clickable links; summary for larger batches
+- **System tray indicator** -- optional panel icon with live PR count, colour-coded status, and a popup window listing all PRs
+- **D-Bus interface** -- query current PR state, trigger manual refresh, subscribe to change signals
+- **GitHub Enterprise support** -- configurable API base URL for GHE instances
+- **Systemd integration** -- runs as a user service with security hardening and `systemctl reload` support
+- **Resilient** -- exponential backoff with configurable retries, rate limit handling, graceful shutdown (SIGTERM, SIGHUP for config reload)
+- **Runtime configurable** -- log level, notification behaviour, D-Bus toggle, and more via config reload without restarting
 
-![Notification screenshot](docs/screenshot.png)
+---
 
-## Architecture
+## Installation
 
+### From PyPI
+
+```bash
+# Using pip
+pip install forgewatch
+
+# Using pipx (recommended for CLI tools)
+pipx install forgewatch
+
+# Using uv
+uv tool install forgewatch
 ```
-┌──────────────┐         ┌─────────────────┐
-│  GitHub API  │◄────────│  Poller         │
-│  (REST)      │         │  (asyncio +     │
-└──────────────┘         │   aiohttp)      │
-                         └────────┬────────┘
-                                  │
-                                  ▼
-                         ┌─────────────────┐
-                         │  State Store    │
-                         │  (in-memory     │
-                         │   dict)         │
-                         └───┬─────────┬───┘
-                             │         │
-                    ┌────────▼──┐  ┌───▼──────────┐
-                    │ Notifier  │  │ D-Bus        │
-                    │ (notify-  │  │ Interface    │
-                    │  send)    │  │              │
-                    └───────────┘  └───┬──────────┘
-                                       │
-                               D-Bus session bus
-                                       │
-                               ┌───────▼────────┐
-                               │   Indicator    │
-                               │  (system tray  │
-                               │   + popup)     │
-                               └────────────────┘
-The poller queries the GitHub Search API on a configurable interval, the state
-store computes diffs (new / updated / closed PRs), the notifier sends desktop
-notifications for new PRs, and the D-Bus interface lets external tools query
-current state. The system tray indicator is a separate process that connects
-to the daemon over D-Bus to display a live PR count and a clickable popup.
 
-For a deeper dive, see [docs/architecture.md](docs/architecture.md).
-
-## Quick start
-
-### Prerequisites
-
-- Python 3.13+
-- [uv](https://docs.astral.sh/uv/) (recommended) or pip
-- `notify-send` (usually part of `libnotify` — for desktop notifications)
-- A GitHub personal access token with `repo` scope
-
-### Install
+### From source
 
 ```bash
 git clone https://github.com/dvoraj75/forgewatch.git
 cd forgewatch
-uv sync            # installs runtime + dev dependencies
+uv sync            # install runtime + dev dependencies
 ```
 
-### Configure
+### System packages (for the indicator)
 
-Copy the example config and fill in your details:
-
-```bash
-mkdir -p ~/.config/forgewatch
-cp config.example.toml ~/.config/forgewatch/config.toml
-$EDITOR ~/.config/forgewatch/config.toml
-```
-
-```toml
-github_token    = "ghp_your_personal_access_token"
-github_username = "your-github-username"
-poll_interval   = 300       # seconds (minimum 30)
-repos           = []        # empty = all repos, or ["owner/repo1", "owner/repo2"]
-
-# Optional settings (shown with defaults):
-# log_level              = "info"       # debug, info, warning, error
-# notifications_enabled  = true         # toggle desktop notifications
-# dbus_enabled           = true         # toggle D-Bus interface
-# github_base_url        = "https://api.github.com"  # for GitHub Enterprise
-# max_retries            = 3            # HTTP retries for 5xx errors
-# notification_threshold = 3            # individual vs. summary cutoff
-# notification_urgency   = "normal"     # low, normal, critical
-```
-
-The token can also be provided via the `GITHUB_TOKEN` environment variable,
-which takes precedence over the config file value.
-
-See [docs/configuration.md](docs/configuration.md) for the full reference.
-
-### Run
-
-```bash
-# Direct execution
-uv run forgewatch
-
-# Or via python -m
-uv run python -m forgewatch
-```
-
-Command-line flags:
-
-```bash
-# Custom config path
-uv run forgewatch -c /path/to/config.toml
-
-# Verbose logging (DEBUG level)
-uv run forgewatch -v
-```
-
-### Management commands
-
-ForgeWatch includes built-in CLI subcommands for setup, service management,
-and uninstall:
-
-```bash
-uv run forgewatch setup                     # interactive setup wizard
-uv run forgewatch setup --config-only       # only create config.toml
-uv run forgewatch setup --service-only      # only install + start systemd services
-uv run forgewatch service status             # show service status
-uv run forgewatch service start              # start services
-uv run forgewatch service stop               # stop services
-uv run forgewatch service restart            # restart services
-uv run forgewatch service install            # install systemd unit files
-uv run forgewatch service enable             # enable autostart
-uv run forgewatch service disable            # disable autostart
-uv run forgewatch uninstall                  # remove services + optionally config
-```
-
-### Run the indicator (optional)
-
-The system tray indicator is a separate process that connects to the running
-daemon over D-Bus. It requires GTK3 and AppIndicator3 system packages (see
-[Dependencies](#system-tray-indicator-optional) below).
-
-```bash
-# Start the indicator (daemon must be running)
-uv run forgewatch-indicator
-
-# Or via python -m
-uv run python -m forgewatch.indicator
-
-# Verbose logging
-uv run forgewatch-indicator -v
-```
-
-### Automated install / update / uninstall
-
-The recommended way to set up ForgeWatch as a systemd user service is with
-the built-in setup wizard:
-
-```bash
-forgewatch setup                     # full setup: config + services
-forgewatch setup --config-only       # only create config.toml
-forgewatch setup --service-only      # only install + start systemd services
-```
-
-To update to the latest version:
-
-```bash
-pip install --upgrade forgewatch     # or: pipx upgrade forgewatch
-forgewatch service install           # update service files
-forgewatch service restart           # restart with new version
-```
-
-To uninstall:
-
-```bash
-forgewatch uninstall                 # stop services, remove units, optionally remove config
-```
-
-### Systemd user service (manual setup)
-
-If you prefer to set things up manually instead of using `forgewatch setup`:
-
-```bash
-# Install the daemon service
-mkdir -p ~/.config/systemd/user/
-cp systemd/forgewatch.service ~/.config/systemd/user/
-
-# Enable and start
-systemctl --user daemon-reload
-systemctl --user enable --now forgewatch
-
-# Check logs
-journalctl --user -u forgewatch -f
-```
-
-To also run the system tray indicator as a service:
-
-```bash
-cp systemd/forgewatch-indicator.service ~/.config/systemd/user/
-systemctl --user daemon-reload
-systemctl --user enable --now forgewatch-indicator
-```
-
-The indicator service depends on the daemon -- systemd starts them in the
-correct order and the indicator auto-reconnects if the daemon restarts.
-
-See [docs/systemd.md](docs/systemd.md) for the full guide, including token
-configuration, security hardening details, and troubleshooting.
-
-## Project structure
-
-```
-forgewatch/
-├── config.example.toml          # Example configuration file
-├── pyproject.toml               # Project metadata, deps, tool config
-│
-├── forgewatch/
-│   ├── __init__.py              # Package marker (__version__)
-│   ├── __main__.py              # Entry point -- dispatches to CLI subcommands or daemon
-│   ├── config.py                # Configuration loading and validation
-│   ├── poller.py                # GitHub API client (search, pagination, rate limits)
-│   ├── store.py                 # In-memory state store with diff computation
-│   ├── dbus_service.py          # D-Bus interface (methods, signals, bus setup)
-│   ├── notifier.py              # Desktop notifications via notify-send
-│   ├── url_opener.py            # Shared URL opener (XDG portal + xdg-open fallback)
-│   ├── daemon.py                # Main daemon loop and signal handling
-│   │
-│   ├── cli/                     # CLI management subcommands (stdlib only)
-│   │   ├── __init__.py          # Subcommand parser + dispatch
-│   │   ├── setup.py             # Setup wizard (config + systemd)
-│   │   ├── service.py           # Service management (start/stop/status/...)
-│   │   ├── uninstall.py         # Uninstall flow (stop, remove, cleanup)
-│   │   ├── _output.py           # Coloured terminal output helpers
-│   │   ├── _prompts.py          # Interactive prompt helpers
-│   │   ├── _checks.py           # System dependency checks
-│   │   ├── _systemd.py          # Systemd operations (install/remove/start/stop)
-│   │   └── systemd/             # Bundled .service files (importlib.resources)
-│   │
-│   └── indicator/               # System tray indicator (optional, separate process)
-│       ├── __init__.py
-│       ├── __main__.py          # python -m forgewatch.indicator entry point
-│       ├── app.py               # Application orchestrator
-│       ├── client.py            # D-Bus client for daemon communication
-│       ├── tray.py              # System tray icon (AppIndicator3)
-│       ├── window.py            # Popup window (GTK3) with PR list
-│       ├── models.py            # PRInfo and DaemonStatus dataclasses
-│       ├── _tray_state.py       # Pure icon/label state logic (no GTK imports)
-│       ├── _window_helpers.py   # Pure helpers: relative time, sorting, markup
-│       └── resources/           # SVG icons for the tray indicator
-│
-├── systemd/
-│   ├── forgewatch.service           # Systemd user service (daemon)
-│   └── forgewatch-indicator.service # Systemd user service (indicator)
-│
-├── tests/
-│   ├── conftest.py              # Shared test fixtures
-│   ├── test_config.py           # Tests for config module
-│   ├── test_poller.py           # Tests for poller module
-│   ├── test_store.py            # Tests for store module
-│   ├── test_dbus_service.py     # Tests for D-Bus service module
-│   ├── test_notifier.py         # Tests for notifier module
-│   ├── test_daemon.py           # Tests for daemon module
-│   ├── test_main.py             # Tests for __main__ module
-│   ├── test_url_opener.py       # Tests for URL opener module
-│   ├── test_indicator_app.py    # Tests for indicator app orchestrator
-│   ├── test_indicator_client.py # Tests for indicator D-Bus client
-│   ├── test_indicator_tray.py   # Tests for indicator tray state logic
-│   ├── test_indicator_window.py # Tests for indicator window helpers
-│   ├── test_indicator_main.py   # Tests for indicator entry point
-│   ├── test_cli_init.py         # Tests for CLI parser + dispatch
-│   ├── test_cli_output.py       # Tests for CLI output helpers
-│   ├── test_cli_prompts.py      # Tests for CLI prompt helpers
-│   ├── test_cli_checks.py       # Tests for CLI dependency checks
-│   ├── test_cli_systemd.py      # Tests for CLI systemd operations
-│   ├── test_cli_setup.py        # Tests for setup command
-│   ├── test_cli_service.py      # Tests for service command
-│   └── test_cli_uninstall.py    # Tests for uninstall command
-│
-└── docs/                        # Detailed documentation
-    ├── architecture.md
-    ├── configuration.md
-    ├── development.md
-    ├── systemd.md
-    └── modules/
-        ├── cli.md
-        ├── config.md
-        ├── poller.md
-        ├── store.md
-        ├── dbus_service.md
-        ├── notifier.md
-        ├── url_opener.md
-        ├── daemon.md
-        └── indicator.md
-```
-
-## Development
-
-```bash
-uv sync                        # install all deps (runtime + dev group)
-uv run pytest                  # run tests (ALL passing)
-uv run ruff check .            # lint (ALL rules enabled)
-uv run ruff format .           # format (black-compatible)
-uv run mypy .                  # type check (strict mode)
-```
-
-See [docs/development.md](docs/development.md) for coding conventions, tooling
-details, and project structure notes.
-
-## Documentation
-
-| Document | Description |
-|---|---|
-| [docs/architecture.md](docs/architecture.md) | System design, component interactions, design decisions |
-| [docs/configuration.md](docs/configuration.md) | Full configuration reference with examples |
-| [docs/development.md](docs/development.md) | Developer guide: tooling, conventions, testing |
-| [docs/systemd.md](docs/systemd.md) | Systemd user service setup and management |
-| [docs/modules/cli.md](docs/modules/cli.md) | CLI management package API reference |
-| [docs/modules/config.md](docs/modules/config.md) | `config.py` API reference |
-| [docs/modules/poller.md](docs/modules/poller.md) | `poller.py` API reference |
-| [docs/modules/store.md](docs/modules/store.md) | `store.py` API reference |
-| [docs/modules/dbus_service.md](docs/modules/dbus_service.md) | `dbus_service.py` API reference |
-| [docs/modules/notifier.md](docs/modules/notifier.md) | `notifier.py` API reference |
-| [docs/modules/url_opener.md](docs/modules/url_opener.md) | `url_opener.py` API reference |
-| [docs/modules/daemon.md](docs/modules/daemon.md) | `daemon.py` API reference |
-| [docs/modules/indicator.md](docs/modules/indicator.md) | Indicator package API reference |
-
-## Dependencies
-
-| Package | Purpose |
-|---|---|
-| `aiohttp` | Async HTTP client for GitHub API |
-| `dbus-next` | Async D-Bus client/server |
-| `tomllib` (stdlib) | TOML config parsing |
-| `notify-send` (system) | Desktop notifications |
-
-Dev-only: `pytest`, `pytest-asyncio`, `pytest-xdist`, `pytest-cov`,
-`aioresponses`, `ruff`, `mypy`, `pre-commit`.
-
-### System tray indicator (optional)
-
-The indicator is a separate process that shows a tray icon with live PR
-count. It connects to the daemon over D-Bus and requires additional
-dependencies:
-
-**Python packages** (installed automatically with `--extra indicator`):
-
-| Package | Purpose |
-|---|---|
-| `gbulb` | GLib/asyncio event loop integration |
-
-**System packages** (must be installed manually via your package manager):
+The system tray indicator requires GTK3 and AppIndicator3:
 
 ```bash
 # Ubuntu / Debian
@@ -368,14 +128,204 @@ sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0 \
 sudo dnf install python3-gobject gtk3 libappindicator-gtk3
 ```
 
-Then install with indicator support:
+The core daemon works without these -- the indicator is fully optional.
+
+---
+
+## Quick start
+
+### 1. Configure
+
+The fastest way to get started is the setup wizard:
 
 ```bash
-uv sync --extra indicator
+forgewatch setup
 ```
 
-The core daemon works without any of these — the indicator is fully optional.
+Or configure manually:
+
+```bash
+mkdir -p ~/.config/forgewatch
+cp config.example.toml ~/.config/forgewatch/config.toml
+$EDITOR ~/.config/forgewatch/config.toml
+```
+
+Minimal config:
+
+```toml
+github_token    = "ghp_your_personal_access_token"
+github_username = "your-github-username"
+poll_interval   = 300       # seconds (minimum 30)
+repos           = []        # empty = all repos, or ["owner/repo1", "owner/repo2"]
+```
+
+The token can also be provided via the `GITHUB_TOKEN` environment variable.
+See [docs/configuration.md](docs/configuration.md) for the full reference.
+
+### 2. Run
+
+```bash
+forgewatch                          # start the daemon
+forgewatch -v                       # verbose (DEBUG) logging
+forgewatch -c /path/to/config.toml  # custom config path
+```
+
+### 3. Manage as a systemd service
+
+```bash
+forgewatch setup --service-only    # install + enable + start services
+forgewatch service status          # check service status
+forgewatch service restart         # restart after config changes
+```
+
+Or manually:
+
+```bash
+cp systemd/forgewatch.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now forgewatch
+journalctl --user -u forgewatch -f  # follow logs
+```
+
+### 4. System tray indicator (optional)
+
+```bash
+forgewatch-indicator               # start (daemon must be running)
+forgewatch-indicator -v            # verbose logging
+```
+
+As a systemd service:
+
+```bash
+cp systemd/forgewatch-indicator.service ~/.config/systemd/user/
+systemctl --user enable --now forgewatch-indicator
+```
+
+See [docs/systemd.md](docs/systemd.md) for the full service management guide.
+
+### CLI commands reference
+
+```bash
+forgewatch setup                    # interactive setup wizard
+forgewatch setup --config-only      # only create config file
+forgewatch setup --service-only     # only install + start services
+forgewatch service status           # show service status
+forgewatch service start|stop|restart
+forgewatch service install          # install systemd unit files
+forgewatch service enable|disable   # toggle autostart
+forgewatch uninstall                # remove services + optionally config
+```
+
+---
+
+## Architecture
+
+```
+                         ┌──────────────┐
+                         │  GitHub API  │
+                         └──────┬───────┘
+                                │
+                       ┌────────▼────────┐
+                       │     Poller      │
+                       │  (aiohttp +     │
+                       │   asyncio)      │
+                       └────────┬────────┘
+                                │
+                       ┌────────▼────────┐
+                       │   State Store   │
+                       │   (in-memory)   │
+                       └───┬─────────┬───┘
+                           │         │
+                  ┌────────▼──┐  ┌───▼──────────┐
+                  │ Notifier  │  │    D-Bus     │
+                  │ (notify-  │  │  Interface   │
+                  │  send)    │  └───┬──────────┘
+                  └───────────┘      │
+                              D-Bus session bus
+                                     │
+                             ┌───────▼────────┐
+                             │   Indicator    │
+                             │  (GTK3 tray +  │
+                             │   popup window)│
+                             └────────────────┘
+```
+
+The poller queries the GitHub Search API on a configurable interval. The state
+store computes diffs (new / updated / closed PRs). The notifier sends desktop
+notifications for new PRs. The D-Bus interface lets the indicator (and other
+tools) query current state. The indicator is a separate process that shows a
+live tray icon and clickable PR list.
+
+For the full design, see [docs/architecture.md](docs/architecture.md).
+
+---
+
+## Development
+
+```bash
+uv sync                        # install all deps
+uv run pytest                  # run tests (parallel, with coverage)
+uv run ruff check .            # lint (all rules enabled)
+uv run ruff format .           # format (black-compatible)
+uv run mypy forgewatch         # type check (strict mode)
+```
+
+See [docs/development.md](docs/development.md) for coding conventions, testing
+patterns, CI pipeline details, and project structure.
+
+---
+
+## Documentation
+
+| Document | Description |
+|---|---|
+| [Architecture](docs/architecture.md) | System design, component interactions, design decisions |
+| [Configuration](docs/configuration.md) | Full configuration reference with examples |
+| [Development](docs/development.md) | Developer guide: tooling, conventions, CI pipelines, testing |
+| [Systemd](docs/systemd.md) | Service setup, management, and troubleshooting |
+
+### Module API references
+
+| Module | Description |
+|---|---|
+| [CLI](docs/modules/cli.md) | Management subcommands (setup, service, uninstall) |
+| [Config](docs/modules/config.md) | Configuration loading and validation |
+| [Poller](docs/modules/poller.md) | GitHub API client, pagination, rate limiting |
+| [Store](docs/modules/store.md) | In-memory state store with diff computation |
+| [D-Bus Service](docs/modules/dbus_service.md) | D-Bus interface methods, signals, serialization |
+| [Notifier](docs/modules/notifier.md) | Desktop notifications, avatars, click-to-open |
+| [URL Opener](docs/modules/url_opener.md) | XDG portal + xdg-open URL opener |
+| [Daemon](docs/modules/daemon.md) | Main daemon loop and signal handling |
+| [Indicator](docs/modules/indicator.md) | System tray icon, popup window, D-Bus client |
+
+---
+
+## Dependencies
+
+**Runtime:**
+
+| Package | Purpose |
+|---|---|
+| [`aiohttp`](https://docs.aiohttp.org/) | Async HTTP client for GitHub API |
+| [`dbus-next`](https://github.com/altdesktop/python-dbus-next) | Async D-Bus client/server |
+| [`gbulb`](https://github.com/beeware/gbulb) | GLib/asyncio event loop integration (for the system tray indicator) |
+
+**System tray indicator** (optional, requires system packages):
+
+| Package | Purpose |
+|---|---|
+| GTK3 + AppIndicator3 | System packages (see [Installation](#system-packages-for-the-indicator)) |
+
+**Dev-only:** pytest, pytest-asyncio, pytest-xdist, pytest-cov, aioresponses,
+ruff, mypy, pre-commit, pip-audit.
+
+---
+
+## Contributing
+
+Contributions are welcome! See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for
+development setup, coding conventions, testing guidelines, and the PR process.
 
 ## License
 
-MIT — see [LICENSE](LICENSE) for details.
+MIT -- see [LICENSE](LICENSE) for details.

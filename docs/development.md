@@ -211,10 +211,6 @@ Dependencies are managed in `pyproject.toml`:
 dependencies = [
     "aiohttp>=3.9,<4",
     "dbus-next>=0.2.3,<1",
-]
-
-[project.optional-dependencies]
-indicator = [
     "gbulb>=0.6",
 ]
 
@@ -234,7 +230,9 @@ dev = [
 
 Dev dependencies use `[dependency-groups]` (PEP 735) rather than
 `[project.optional-dependencies]` because the project uses `uv` as its package
-manager.
+manager. All runtime dependencies (including `gbulb` for the indicator) are in
+core `[project.dependencies]` so a plain `pip install forgewatch` gets
+everything needed.
 
 ### System tray indicator dependencies
 
@@ -252,16 +250,10 @@ sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0 \
 sudo dnf install python3-gobject gtk3 libappindicator-gtk3
 ```
 
-**Python packages** (installed via the `indicator` optional extra):
-
-```bash
-uv sync --extra indicator
-```
-
-This installs `gbulb` (GLib/asyncio event loop integration) and its transitive
-dependencies (`PyGObject`, `pycairo`). The C build dependencies
-(`libcairo2-dev`, `libgirepository1.0-dev`) must be installed first or the
-build will fail.
+`gbulb` (GLib/asyncio event loop integration) is a core dependency and is
+installed automatically with `pip install forgewatch` or `uv sync`. The C build
+dependencies (`libcairo2-dev`, `libgirepository1.0-dev`) must be installed
+first or the build will fail.
 
 Without these, the core daemon works normally — only the system tray indicator
 is unavailable. Running `python -m forgewatch.indicator` will print a clear
@@ -390,6 +382,33 @@ push and pull request to `main` or `develop`, two jobs run **in parallel**:
 3. **Dependency audit** -- `pip-audit` (scans installed packages for known CVEs)
 
 Both jobs must pass before merging.
+
+### Publish pipeline
+
+A separate workflow (`.github/workflows/publish.yml`) handles package
+publishing to PyPI and TestPyPI:
+
+**Triggers:**
+
+- **Push to `develop`** (path-filtered: `forgewatch/**`, `pyproject.toml`,
+  `uv.lock`) -- publishes a dev build to TestPyPI
+- **GitHub Release published** -- publishes the release to PyPI
+
+**Jobs (sequential):**
+
+1. **CI gate** -- reuses `ci.yml` via `workflow_call` (all lint + tests must pass)
+2. **Build** -- produces sdist + wheel with `uv build`. On develop pushes,
+   auto-stamps a dev version (`x.y.z.devN` using `GITHUB_RUN_NUMBER`) for
+   unique TestPyPI uploads
+3. **Publish to TestPyPI** -- uploads via `pypa/gh-action-pypi-publish` with
+   OIDC Trusted Publishing (no API tokens needed)
+4. **Publish to PyPI** -- only on `release` events, uploads to the real index
+   via OIDC Trusted Publishing
+
+Authentication uses **OIDC Trusted Publisher** (`id-token: write` permission)
+with separate GitHub environments (`testpypi` and `pypi`). No API tokens or
+secrets need to be configured -- PyPI trusts the GitHub Actions workflow
+directly.
 
 ## Pre-commit hooks
 

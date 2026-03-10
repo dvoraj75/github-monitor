@@ -412,14 +412,10 @@ the indicator still starts even if the daemon fails (the indicator auto-reconnec
 the indicator service alongside the daemon. To install the indicator manually:
 
 ```bash
-# 1. Install the indicator package
-uv tool install '.[indicator]'
-# or: uv sync --extra indicator
-
-# 2. Install service files (resolves executable path automatically)
+# 1. Install service files (resolves executable path automatically)
 forgewatch service install
 
-# 3. Enable and start
+# 2. Enable and start
 systemctl --user enable --now forgewatch-indicator
 ```
 
@@ -443,10 +439,10 @@ systemctl --user stop forgewatch-indicator
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `ExecStart not found` / exit code 203 | `forgewatch-indicator` not found | Re-run `forgewatch service install` or install with `uv tool install '.[indicator]'` |
+| `ExecStart not found` / exit code 203 | `forgewatch-indicator` not found | Re-run `forgewatch service install` or reinstall with `pip install forgewatch` |
 | `ERROR: GTK 3.0 typelib not found` | Missing GTK3 system packages | `sudo apt install python3-gi gir1.2-gtk-3.0` |
 | `ERROR: AppIndicator3 0.1 typelib not found` | Missing AppIndicator3 typelib | `sudo apt install gir1.2-appindicator3-0.1` |
-| `ERROR: 'gbulb' package not found` | Missing gbulb Python package | `uv sync --extra indicator` |
+| `ERROR: 'gbulb' package not found` | Missing gbulb Python package | Reinstall: `pip install forgewatch` |
 | Tray icon shows "disconnected" | Daemon is not running | Start the daemon: `systemctl --user start forgewatch` |
 | No tray icon visible | Desktop environment lacks AppIndicator support | Install a system tray extension (e.g. `gnome-shell-extension-appindicator` for GNOME) |
 

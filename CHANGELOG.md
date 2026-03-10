@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.4.0.dev2] - Unreleased
+## [1.4.0] - 2026-03-10
 
 ### Added
 
@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Moved `gbulb` from optional `[indicator]` extra into core dependencies — `pip install forgewatch` now includes everything needed, no extras syntax required
 - **Rebrand**: renamed project from `github-monitor` to `forgewatch` — Python package (`github_monitor` -> `forgewatch`), CLI entry points, D-Bus bus name (`org.forgewatch.Daemon`), systemd service files, config directory (`~/.config/forgewatch/`), icon resources, and all metadata
 - Removed deprecated shell scripts (`install.sh`, `update.sh`, `uninstall.sh`) — replaced by CLI subcommands in v1.3.0
 - Coverage comment step in CI now conditional on `pull_request` events to avoid failures when called from the publish pipeline
