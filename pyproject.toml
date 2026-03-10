@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "forgewatch"
-version = "1.4.0.dev1"
+version = "1.4.0.dev2"
 description = "Daemon that monitors GitHub PRs and exposes state over D-Bus"
 readme = "README.md"
 license = "MIT"
@@ -62,6 +62,24 @@ dev = [
     "pytest-cov>=7.0.0",
     "pre-commit>=4.5.1",
     "pip-audit>=2.7",
+]
+
+# -- hatch build ------------------------------------------------------------
+
+[tool.hatch.build.targets.wheel]
+packages = ["forgewatch"]
+
+[tool.hatch.build.targets.wheel.force-include]
+
+[tool.hatch.build.targets.sdist]
+include = ["forgewatch/", "LICENSE", "README.md", "pyproject.toml"]
+
+# Ensure non-Python data files inside the package are included.
+[tool.hatch.build]
+artifacts = [
+    "forgewatch/py.typed",
+    "forgewatch/cli/systemd/*.service",
+    "forgewatch/indicator/resources/**/*.svg",
 ]
 
 # -- ruff -------------------------------------------------------------------
