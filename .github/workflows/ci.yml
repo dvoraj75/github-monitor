@@ -50,8 +50,11 @@ jobs:
             .venv
 
   test:
-    name: Test & audit
+    name: Test & audit (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
     permissions:
       contents: read
       pull-requests: write
@@ -62,7 +65,7 @@ jobs:
         uses: astral-sh/setup-uv@v7
 
       - name: Set up Python
-        run: uv python install 3.13
+        run: uv python install ${{ matrix.python-version }}
 
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y libcairo2-dev libgirepository1.0-dev pkg-config
@@ -74,7 +77,7 @@ jobs:
         run: uv run pytest --cov-report=xml
 
       - name: Pytest coverage comment
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && matrix.python-version == '3.13'
         uses: orgoro/coverage@v3.2
         with:
           coverageFile: coverage.xml
@@ -82,4 +85,5 @@ jobs:
           thresholdAll: 0.9
 
       - name: Dependency audit
+        if: matrix.python-version == '3.13'
         run: uv run pip-audit

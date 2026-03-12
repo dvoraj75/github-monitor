@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - Unreleased
+
+### Changed
+
+- Lowered minimum Python version from 3.13 to 3.11 -- no code changes required; the codebase only uses `tomllib`, `enum.StrEnum`, and `datetime.UTC` from 3.11+
+- Ruff `target-version` set to `py311` and mypy `python_version` set to `3.11` to match the new floor
+- CI test job now runs a Python version matrix (3.11, 3.12, 3.13, 3.14) -- all versions must pass
+- Coverage comment and `pip-audit` scoped to Python 3.13 to avoid duplicate PR comments and redundant audit runs
+- Added PyPI classifiers for Python 3.11, 3.12, and 3.14
+
 ## [1.4.0] - 2026-03-10
 
 ### Added

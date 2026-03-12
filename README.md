@@ -12,7 +12,7 @@ An async Python daemon that watches GitHub for PRs assigned to you,
 sends desktop notifications, and shows live status in your system tray.
 
 [![CI](https://github.com/dvoraj75/forgewatch/actions/workflows/ci.yml/badge.svg)](https://github.com/dvoraj75/forgewatch/actions/workflows/ci.yml)
-[![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue)](https://www.python.org/downloads/)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Code style: Ruff](https://img.shields.io/badge/code%20style-ruff-000000)](https://docs.astral.sh/ruff/)
 [![Type checked: mypy](https://img.shields.io/badge/type%20checked-mypy-blue)](https://mypy-lang.org/)

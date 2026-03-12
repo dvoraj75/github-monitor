@@ -5,7 +5,7 @@ conventions, and testing approach for ForgeWatch.
 
 ## Prerequisites
 
-- Python 3.13+
+- Python 3.11+
 - [uv](https://docs.astral.sh/uv/) (recommended package manager)
 
 ## Setup
@@ -118,7 +118,7 @@ All tool configuration lives in `pyproject.toml`. There are no separate
 
 ```toml
 [tool.ruff]
-target-version = "py313"
+target-version = "py311"
 line-length = 120
 
 [tool.ruff.lint]
@@ -163,7 +163,7 @@ Test files get relaxed rules:
 
 ```toml
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.11"
 strict = true
 warn_return_any = true
 warn_unused_configs = true

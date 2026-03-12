@@ -6,7 +6,7 @@ Thanks for your interest in contributing! This guide will help you get started.
 
 ### Prerequisites
 
-- **Python 3.13+**
+- **Python 3.11+**
 - **[uv](https://docs.astral.sh/uv/)** -- used for dependency management and running tools
 - **Linux** -- ForgeWatch relies on D-Bus and systemd (see [Architecture](#project-architecture) below)
 
