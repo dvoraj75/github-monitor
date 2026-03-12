@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "forgewatch"
-version = "1.4.1.dev2"
+version = "1.4.1"
 description = "Daemon that monitors GitHub PRs and exposes state over D-Bus"
 readme = "README.md"
 license = "MIT"
