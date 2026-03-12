@@ -442,7 +442,7 @@ wheels = [
 
 [[package]]
 name = "forgewatch"
-version = "1.4.1.dev2"
+version = "1.4.1"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
