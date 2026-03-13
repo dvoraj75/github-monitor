@@ -23,8 +23,6 @@ def build_full_parser() -> argparse.ArgumentParser:
     This function is public so that :func:`forgewatch.cli.dispatch` can
     obtain the full parser for shell-completion generation via ``shtab``.
     """
-    import shtab  # noqa: PLC0415
-
     from .cli import add_subcommands  # noqa: PLC0415
 
     parser = argparse.ArgumentParser(
@@ -39,7 +37,13 @@ def build_full_parser() -> argparse.ArgumentParser:
         default=None,
         help="Path to config.toml",
     )
-    config_action.complete = shtab.FILE  # type: ignore[attr-defined]
+
+    try:
+        import shtab  # noqa: PLC0415
+
+        config_action.complete = shtab.FILE  # type: ignore[attr-defined]
+    except ImportError:
+        pass
     parser.add_argument(
         "-v",
         "--verbose",
@@ -78,7 +82,7 @@ def _run_daemon(args: argparse.Namespace) -> None:
     import sys  # noqa: PLC0415
     from pathlib import Path  # noqa: PLC0415
 
-    from .config import CONFIG_DIR, CONFIG_PATH, ConfigError, load_config  # noqa: PLC0415
+    from .config import CONFIG_PATH, ConfigError, load_config  # noqa: PLC0415
     from .daemon import Daemon  # noqa: PLC0415
 
     # Set up basic logging before config load so errors are properly formatted
@@ -96,10 +100,8 @@ def _run_daemon(args: argparse.Namespace) -> None:
     except ConfigError as exc:
         if "not found" in str(exc).lower():
             logger.error(  # noqa: TRY400
-                "%s\n\n  To get started, run:   forgewatch setup\n"
-                "  Or create config manually:  mkdir -p %s && cp config.example.toml %s",
+                "%s\n\n  To get started, run:   forgewatch setup\n  Or create config manually in:  %s",
                 exc,
-                CONFIG_DIR,
                 CONFIG_PATH,
             )
         else:

@@ -456,8 +456,8 @@ def test_notifications_per_repo_disabled(tmp_path: Path) -> None:
     cfg = load_config(p)
     repo_cfg = cfg.notifications.repos["org/other-repo"]
     assert repo_cfg.enabled is False
-    assert repo_cfg.urgency == "normal"
-    assert repo_cfg.threshold == 3
+    assert repo_cfg.urgency is None
+    assert repo_cfg.threshold is None
 
 
 def test_notifications_per_repo_invalid_urgency(tmp_path: Path) -> None:
@@ -770,6 +770,122 @@ window_width = 50
     msg = str(exc_info.value)
     assert "reconnect_interval" in msg
     assert "window_width" in msg
+
+
+def test_per_repo_only_enabled_inherits_none_defaults(tmp_path: Path) -> None:
+    """A repo with only ``enabled=true`` should get None urgency/threshold (inherit global)."""
+    p = tmp_path / "config.toml"
+    p.write_text(
+        'github_token = "ghp_abc"\ngithub_username = "user"\n'
+        'notification_urgency = "critical"\n'
+        "notification_threshold = 10\n"
+        '[notifications.repos."acme/web"]\n'
+        "enabled = true\n"
+    )
+    cfg = load_config(p)
+    repo_cfg = cfg.notifications.repos["acme/web"]
+    assert repo_cfg.enabled is True
+    # urgency and threshold should be None (inherit global), not dataclass defaults
+    assert repo_cfg.urgency is None
+    assert repo_cfg.threshold is None
+
+
+def test_bool_as_poll_interval_rejected(tmp_path: Path) -> None:
+    """``poll_interval = true`` should be rejected as non-integer, not pass as 1."""
+    p = tmp_path / "config.toml"
+    p.write_text('github_token = "ghp_abc"\ngithub_username = "user"\npoll_interval = true\n')
+    with pytest.raises(ConfigError, match="poll_interval must be an integer"):
+        load_config(p)
+
+
+def test_bool_as_notification_threshold_rejected(tmp_path: Path) -> None:
+    """``notification_threshold = true`` should be rejected as non-integer."""
+    p = tmp_path / "config.toml"
+    p.write_text('github_token = "ghp_abc"\ngithub_username = "user"\nnotification_threshold = true\n')
+    with pytest.raises(ConfigError, match="notification_threshold must be an integer"):
+        load_config(p)
+
+
+def test_unknown_indicator_key_logs_warning(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """Unknown key in [indicator] section should produce a warning."""
+    content = """\
+github_token = "ghp_abc"
+github_username = "user"
+
+[indicator]
+reconnect_intervel = 5
+"""
+    p = tmp_path / "config.toml"
+    p.write_text(content)
+    with caplog.at_level(logging.WARNING, logger="forgewatch.config"):
+        load_config(p)
+    assert any("'reconnect_intervel'" in r.message for r in caplog.records)
+    assert any("[indicator]" in r.message for r in caplog.records)
+
+
+def test_unknown_notifications_key_logs_warning(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """Unknown key in [notifications] section should produce a warning."""
+    content = """\
+github_token = "ghp_abc"
+github_username = "user"
+
+[notifications]
+groping = "flat"
+"""
+    p = tmp_path / "config.toml"
+    p.write_text(content)
+    with caplog.at_level(logging.WARNING, logger="forgewatch.config"):
+        load_config(p)
+    assert any("'groping'" in r.message for r in caplog.records)
+    assert any("[notifications]" in r.message for r in caplog.records)
+
+
+def test_unknown_repo_notification_key_logs_warning(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """Unknown key in a [notifications.repos.*] entry should produce a warning."""
+    content = """\
+github_token = "ghp_abc"
+github_username = "user"
+
+[notifications.repos."acme/web"]
+enalbed = false
+"""
+    p = tmp_path / "config.toml"
+    p.write_text(content)
+    with caplog.at_level(logging.WARNING, logger="forgewatch.config"):
+        load_config(p)
+    assert any("'enalbed'" in r.message for r in caplog.records)
+    assert any("[notifications.repos." in r.message for r in caplog.records)
+
+
+def test_notification_repo_name_format_validated(tmp_path: Path) -> None:
+    """Repo keys in [notifications.repos] should be validated against _REPO_PATTERN."""
+    p = tmp_path / "config.toml"
+    p.write_text(
+        'github_token = "ghp_abc"\ngithub_username = "user"\n'
+        '[notifications.repos."not/a/valid/repo/name"]\n'
+        "enabled = true\n"
+    )
+    with pytest.raises(ConfigError, match=r"Invalid repo format in \[notifications.repos\]"):
+        load_config(p)
+
+
+def test_notification_errors_combined_with_top_level(tmp_path: Path) -> None:
+    """Notification validation errors should be reported alongside top-level errors."""
+    content = """\
+poll_interval = 5
+
+[notifications]
+grouping = "invalid"
+"""
+    p = tmp_path / "config.toml"
+    p.write_text(content)
+    with pytest.raises(ConfigError) as exc_info:
+        load_config(p)
+    msg = str(exc_info.value)
+    # Top-level errors
+    assert "github_token is required" in msg
+    # Notification errors in the same exception
+    assert "notifications.grouping must be one of" in msg
 
 
 def test_indicator_config_frozen() -> None:

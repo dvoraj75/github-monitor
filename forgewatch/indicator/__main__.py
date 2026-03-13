@@ -100,23 +100,18 @@ def main() -> None:
 
     logger = logging.getLogger(__name__)
 
+    from forgewatch.config import IndicatorConfig, load_config, load_indicator_config  # noqa: PLC0415
+
     # Load config (best-effort: default to "light" theme and default
     # IndicatorConfig on failure).
     icon_theme = "light"
-    indicator_config = None
+    indicator_config = IndicatorConfig()
     try:
-        from forgewatch.config import IndicatorConfig, load_config, load_indicator_config  # noqa: PLC0415
-
         cfg = load_config()
         icon_theme = cfg.icon_theme
         indicator_config = load_indicator_config()
     except Exception:  # noqa: BLE001
         logger.warning("Failed to load config, using defaults", exc_info=True)
-
-    if indicator_config is None:
-        from forgewatch.config import IndicatorConfig  # noqa: PLC0415
-
-        indicator_config = IndicatorConfig()
 
     # Install gbulb BEFORE obtaining an event loop so the GLib-based
     # policy is active from the start.

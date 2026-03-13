@@ -146,6 +146,20 @@ async def notify_new_prs(
         await _notify_flat(new_prs, threshold=threshold, urgency=urgency, repo_overrides=repo_overrides)
 
 
+_URGENCY_RANK = {"low": 0, "normal": 1, "critical": 2}
+
+
+def _get_highest_urgency(urgencies: list[str]) -> str:
+    """Return the highest urgency level from a list.
+
+    Ranking: ``low`` < ``normal`` < ``critical``.
+    Falls back to ``"normal"`` if the list is empty.
+    """
+    if not urgencies:
+        return "normal"
+    return max(urgencies, key=lambda u: _URGENCY_RANK.get(u, 1))
+
+
 async def _notify_flat(
     new_prs: list[PullRequest],
     *,
@@ -172,10 +186,13 @@ async def _notify_flat(
                 )
     else:
         body = "\n".join(f"- {pr.repo_full_name}#{pr.number}: {pr.title}" for pr in filtered[:_BATCH_BODY_LIMIT])
+        batch_urgency = _get_highest_urgency(
+            [_get_repo_urgency(pr.repo_full_name, urgency, repo_overrides) for pr in filtered],
+        )
         await _send_notification(
             summary=f"{len(filtered)} new PR review requests",
             body=body,
-            urgency=urgency,
+            urgency=batch_urgency,
         )
 
 
@@ -233,10 +250,18 @@ def _get_repo_urgency(
     default_urgency: str,
     repo_overrides: dict[str, RepoNotificationConfig] | None,
 ) -> str:
-    """Return the urgency for a repo, falling back to the global default."""
+    """Return the urgency for a repo, falling back to the global default.
+
+    Per-repo overrides use ``None`` for unset fields, meaning "inherit
+    the global value".  Only an explicit TOML setting produces a
+    non-None override.
+    """
     if not repo_overrides or repo_name not in repo_overrides:
         return default_urgency
-    return repo_overrides[repo_name].urgency
+    override = repo_overrides[repo_name].urgency
+    if override is not None:
+        return override
+    return default_urgency
 
 
 def _get_repo_threshold(
@@ -244,10 +269,17 @@ def _get_repo_threshold(
     default_threshold: int,
     repo_overrides: dict[str, RepoNotificationConfig] | None,
 ) -> int:
-    """Return the threshold for a repo, falling back to the global default."""
+    """Return the threshold for a repo, falling back to the global default.
+
+    Per-repo overrides use ``None`` for unset fields, meaning "inherit
+    the global value".
+    """
     if not repo_overrides or repo_name not in repo_overrides:
         return default_threshold
-    return repo_overrides[repo_name].threshold
+    override = repo_overrides[repo_name].threshold
+    if override is not None:
+        return override
+    return default_threshold
 
 
 async def _send_notification(
