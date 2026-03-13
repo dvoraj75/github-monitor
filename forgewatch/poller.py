@@ -266,6 +266,12 @@ class GitHubClient:
             params = None  # URL from Link header includes params
             page += 1
 
+        if page >= _MAX_PAGES and url:
+            logger.warning(
+                "Reached page limit (%d); results may be incomplete — consider narrowing your repo filter",
+                _MAX_PAGES,
+            )
+
         return all_items
 
     async def _request_with_retry(

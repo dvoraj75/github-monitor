@@ -143,15 +143,47 @@ class TestMainVerboseFlag:
 
 
 class TestMainErrorHandling:
-    """Config errors should propagate (clean exit via exception)."""
+    """Config errors should be caught and produce clean exits."""
 
-    def test_config_error_propagates(self) -> None:
+    def test_missing_config_exits_with_setup_hint(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Missing config file should exit cleanly and suggest 'forgewatch setup'."""
         with (
-            patch("forgewatch.config.load_config", side_effect=ConfigError("bad config")),
+            patch(
+                "forgewatch.config.load_config", side_effect=ConfigError("Config file not found: /missing/config.toml")
+            ),
             patch("sys.argv", ["forgewatch"]),
-            pytest.raises(ConfigError, match="bad config"),
+            caplog.at_level(logging.ERROR),
+            pytest.raises(SystemExit, match="1"),
         ):
             main()
+
+        # Should mention the setup command
+        assert any("forgewatch setup" in record.message for record in caplog.records)
+        # Should not produce a raw traceback (ConfigError is caught)
+
+    def test_invalid_config_exits_with_check_hint(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Invalid config should exit cleanly and suggest checking config."""
+        with (
+            patch("forgewatch.config.load_config", side_effect=ConfigError("github_token is required")),
+            patch("sys.argv", ["forgewatch"]),
+            caplog.at_level(logging.ERROR),
+            pytest.raises(SystemExit, match="1"),
+        ):
+            main()
+
+        # Should mention checking the config file
+        assert any("check your config file" in record.message.lower() for record in caplog.records)
+
+    def test_config_error_exits_code_1(self) -> None:
+        """Any ConfigError should result in exit code 1."""
+        with (
+            patch("forgewatch.config.load_config", side_effect=ConfigError("some error")),
+            patch("sys.argv", ["forgewatch"]),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            main()
+
+        assert exc_info.value.code == 1
 
     def test_stop_called_even_on_start_failure(self) -> None:
         config = _make_config()

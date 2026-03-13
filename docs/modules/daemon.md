@@ -225,8 +225,14 @@ See [cli module docs](cli.md) for the full API reference.
 | `-c`, `--config` | Path to a TOML config file (overrides default path resolution) |
 | `-v`, `--verbose` | Set log level to DEBUG (overrides `config.log_level`) |
 
-The config is loaded before `logging.basicConfig()` so that `config.log_level`
-is applied at startup. The `-v` flag overrides the config log level.
+Basic logging (INFO level, or DEBUG with `-v`) is initialised **before** config
+loading so that any `ConfigError` is properly formatted rather than producing a
+raw traceback. If the config file is missing, the error message suggests
+running `forgewatch setup`; if the config is invalid, it suggests checking the
+config file. In both cases the daemon exits cleanly with code 1.
+
+After a successful config load, the log level is reconfigured to the value
+from `config.log_level` (or DEBUG if `-v` was passed).
 
 The entry point is registered in `pyproject.toml` as `forgewatch`, so
 after installation it can be invoked directly:

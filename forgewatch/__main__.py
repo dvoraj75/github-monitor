@@ -68,21 +68,40 @@ def _run_daemon(args: argparse.Namespace) -> None:
     """Configure logging from parsed arguments and run the daemon."""
     import asyncio  # noqa: PLC0415
     import logging  # noqa: PLC0415
+    import sys  # noqa: PLC0415
     from pathlib import Path  # noqa: PLC0415
 
-    from .config import load_config  # noqa: PLC0415
+    from .config import CONFIG_DIR, CONFIG_PATH, ConfigError, load_config  # noqa: PLC0415
     from .daemon import Daemon  # noqa: PLC0415
 
-    config_path = Path(args.config) if args.config else None
-    config = load_config(config_path)
-
-    # CLI --verbose overrides config log_level
-    log_level = logging.DEBUG if args.verbose else getattr(logging, config.log_level.upper())
-
+    # Set up basic logging before config load so errors are properly formatted
+    log_level = logging.DEBUG if args.verbose else logging.INFO
     logging.basicConfig(
         level=log_level,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
+    logger = logging.getLogger(__name__)
+
+    config_path = Path(args.config) if args.config else None
+
+    try:
+        config = load_config(config_path)
+    except ConfigError as exc:
+        if "not found" in str(exc).lower():
+            logger.error(  # noqa: TRY400
+                "%s\n\n  To get started, run:   forgewatch setup\n"
+                "  Or create config manually:  mkdir -p %s && cp config.example.toml %s",
+                exc,
+                CONFIG_DIR,
+                CONFIG_PATH,
+            )
+        else:
+            logger.error("%s\n\n  Check your config file for errors.", exc)  # noqa: TRY400
+        sys.exit(1)
+
+    # CLI --verbose overrides config log_level; reconfigure now that config is loaded
+    final_level = logging.DEBUG if args.verbose else getattr(logging, config.log_level.upper())
+    logging.getLogger().setLevel(final_level)
 
     daemon = Daemon(config, config_path)
 

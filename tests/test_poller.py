@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import UTC, datetime
 from typing import Any
@@ -12,6 +13,7 @@ import pytest
 from aioresponses import CallbackResult, aioresponses
 
 from forgewatch.poller import (
+    _MAX_PAGES,
     AuthError,
     GitHubClient,
     _parse_pr,
@@ -609,4 +611,90 @@ class TestNonOkStatus:
             prs = await client.fetch_review_requested()
 
         assert prs == []
+        await client.close()
+
+
+# ---------------------------------------------------------------------------
+# GitHubClient — pagination cap warning
+# ---------------------------------------------------------------------------
+
+
+class TestPaginationCapWarning:
+    async def test_warns_when_page_limit_reached_with_more_pages(self, caplog: pytest.LogCaptureFixture) -> None:
+        """When all _MAX_PAGES pages are fetched and a next link still exists, a warning should be logged."""
+        client = GitHubClient(token="tok", username="user")
+        await client.start()
+
+        with aioresponses() as m:
+            # Set up _MAX_PAGES pages, each with a Link: next header
+            for page_num in range(_MAX_PAGES):
+                items = [_make_search_item(number=page_num * 100 + i) for i in range(1, 3)]
+                next_url = f"{SEARCH_URL}?q=test&page={page_num + 2}"
+                if page_num == 0:
+                    m.get(
+                        SEARCH_URL_RE,
+                        payload=_search_response(items),
+                        headers={"Link": f'<{next_url}>; rel="next"'},
+                    )
+                else:
+                    prev_url = f"{SEARCH_URL}?q=test&page={page_num + 1}"
+                    m.get(
+                        prev_url,
+                        payload=_search_response(items),
+                        headers={"Link": f'<{next_url}>; rel="next"'},
+                    )
+
+            with caplog.at_level(logging.WARNING, logger="forgewatch.poller"):
+                prs = await client.fetch_review_requested()
+
+        # Should have fetched items from all pages
+        assert len(prs) == _MAX_PAGES * 2
+
+        # Warning should be logged
+        assert any("page limit" in record.message.lower() for record in caplog.records)
+        assert any(str(_MAX_PAGES) in record.message for record in caplog.records)
+
+        await client.close()
+
+    async def test_no_warning_when_all_pages_consumed(self, caplog: pytest.LogCaptureFixture) -> None:
+        """When exactly _MAX_PAGES pages are fetched and the last has no next link, no warning."""
+        client = GitHubClient(token="tok", username="user")
+        await client.start()
+
+        with aioresponses() as m:
+            # Set up _MAX_PAGES pages; the last one has no Link: next header
+            for page_num in range(_MAX_PAGES):
+                items = [_make_search_item(number=page_num * 100 + 1)]
+                is_last = page_num == _MAX_PAGES - 1
+
+                if page_num == 0:
+                    if is_last:
+                        m.get(SEARCH_URL_RE, payload=_search_response(items))
+                    else:
+                        next_url = f"{SEARCH_URL}?q=test&page={page_num + 2}"
+                        m.get(
+                            SEARCH_URL_RE,
+                            payload=_search_response(items),
+                            headers={"Link": f'<{next_url}>; rel="next"'},
+                        )
+                else:
+                    current_url = f"{SEARCH_URL}?q=test&page={page_num + 1}"
+                    if is_last:
+                        m.get(current_url, payload=_search_response(items))
+                    else:
+                        next_url = f"{SEARCH_URL}?q=test&page={page_num + 2}"
+                        m.get(
+                            current_url,
+                            payload=_search_response(items),
+                            headers={"Link": f'<{next_url}>; rel="next"'},
+                        )
+
+            with caplog.at_level(logging.WARNING, logger="forgewatch.poller"):
+                prs = await client.fetch_review_requested()
+
+        assert len(prs) == _MAX_PAGES
+
+        # No pagination warning should be logged
+        assert not any("page limit" in record.message.lower() for record in caplog.records)
+
         await client.close()

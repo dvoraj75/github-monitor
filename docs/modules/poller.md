@@ -269,6 +269,9 @@ using the configured `_base_url`:
    - **403:** Reads `Retry-After` header, sleeps, retries once
    - **Other:** Logs error, returns items collected so far
 5. Follows pagination up to `_MAX_PAGES` pages
+6. If all `_MAX_PAGES` pages were fetched and a `Link: rel="next"` header
+   is still present, logs a warning suggesting the user narrow their repo
+   filter
 
 #### `_request_with_retry()`
 
@@ -342,6 +345,7 @@ Parses the `Link` HTTP header to extract the URL with `rel="next"`. Returns
 | Rate limit near exhaustion | Preemptively wait until reset before making request |
 | All retries exhausted (5xx) | Return last response (caller handles the status code) |
 | All retries exhausted (network) | Raise exception (daemon catches, preserves store state) |
+| Pagination cap reached | Log warning suggesting user narrow repo filter; return items collected so far |
 
 ## Usage example
 
@@ -395,3 +399,4 @@ Tests in `tests/test_poller.py` organized into test classes:
 | `TestUpdateConfig` | Field updates including base_url and max_retries |
 | `TestCustomBaseUrl` | Custom base URL used in HTTP requests |
 | `TestConfigurableRetries` | Configurable retry count, zero retries |
+| `TestPaginationCapWarning` | Warning when page limit reached with more pages, no warning when all consumed |

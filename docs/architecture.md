@@ -326,7 +326,7 @@ The system is designed to be resilient to transient failures:
 | HTTP 401 | Raise `AuthError` immediately (bad token, no point retrying) |
 | HTTP 403 | Respect `Retry-After` header, retry once, then return empty |
 | Rate limit exhausted | Preemptively wait until reset time before making request |
-| Invalid config | Raise `ConfigError` at startup (fail fast) |
+| Invalid config | Catch `ConfigError`, log user-friendly message with remediation hint (`forgewatch setup` for missing config, "check your config file" for validation errors), exit with code 1 |
 
 The daemon should never crash from a transient GitHub API issue. It logs the
 error and continues with the next poll cycle.

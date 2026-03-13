@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - Unreleased
+
+### Added
+
+- Pagination cap warning -- the poller now logs a warning when the page limit is reached and more results are available, suggesting the user narrow their repo filter
+
+### Changed
+
+- Improved first-run experience -- `ConfigError` is now caught and displayed as a user-friendly log message instead of a raw traceback. Missing config suggests running `forgewatch setup`, invalid config suggests checking the config file. The daemon exits cleanly with code 1
+- Logging is now initialised before config loading so that config errors are properly formatted
+
 ## [1.4.1] - 2026-03-12
 
 ### Fixed
