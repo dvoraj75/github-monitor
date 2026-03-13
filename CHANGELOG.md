@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pagination cap warning -- the poller now logs a warning when the page limit is reached and more results are available, suggesting the user narrow their repo filter
 - Configurable indicator settings via a new `[indicator]` TOML section -- `reconnect_interval`, `window_width`, and `max_window_height` can now be tuned without code changes
 - Unknown config key warnings -- `load_config()` now logs a warning for any unrecognised top-level key, helping catch typos early
+- Repo-based notification grouping via a new `[notifications]` config section -- set `grouping = "repo"` to receive per-repository summary notifications instead of a single flat list
+- Per-repo notification overrides via `[notifications.repos."owner/repo"]` -- disable notifications for noisy repos (`enabled = false`), override urgency (`urgency = "critical"`), or set a custom individual-vs-summary threshold per repository
 
 ### Changed
 

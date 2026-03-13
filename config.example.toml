@@ -49,6 +49,14 @@ repos = []
 # Use "dark" for dark desktop panels (light icons on dark background).
 # icon_theme = "light"
 
+# [notifications]
+# grouping = "flat"                  # "flat" (default) or "repo"
+#
+# [notifications.repos."owner/repo"]
+# enabled = true                     # Set to false to suppress notifications
+# urgency = "normal"                 # "low", "normal", or "critical"
+# threshold = 3                      # Individual vs summary threshold
+
 # ---------------------------------------------------------------------------
 # Indicator settings (system tray process)
 # ---------------------------------------------------------------------------

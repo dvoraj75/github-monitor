@@ -145,6 +145,8 @@ class Daemon:
                     diff.new_prs,
                     threshold=self.config.notification_threshold,
                     urgency=self.config.notification_urgency,
+                    grouping=self.config.notifications.grouping,
+                    repo_overrides=self.config.notifications.repos or None,
                 )
 
             if diff.has_changes and self.interface is not None:

@@ -38,6 +38,26 @@ If no config file is found at the resolved path, a `ConfigError` is raised.
 | `notification_urgency` | string | No | `"normal"` | Notification urgency: `"low"`, `"normal"`, or `"critical"` |
 | `icon_theme` | string | No | `"light"` | Icon theme for the system tray indicator: `"light"` (dark icons for light panels) or `"dark"` (light icons for dark panels) |
 
+### `[notifications]` section
+
+Settings for notification grouping and per-repo overrides. These affect how
+desktop notifications are grouped and allow fine-grained control per repository.
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `grouping` | string | No | `"flat"` | Grouping mode: `"flat"` (single list) or `"repo"` (grouped by repository) |
+
+#### `[notifications.repos."owner/repo"]` sub-tables
+
+Per-repo notification overrides. Each key is a repository in `owner/name`
+format. Repos without an entry use the global defaults.
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `enabled` | boolean | No | `true` | Set to `false` to suppress notifications for this repo |
+| `urgency` | string | No | `"normal"` | Notification urgency: `"low"`, `"normal"`, or `"critical"` |
+| `threshold` | integer | No | `3` | Individual vs. summary threshold for this repo (minimum: 1) |
+
 ### `[indicator]` section
 
 Settings for the system tray indicator process. These are read by the
@@ -161,6 +181,16 @@ Unrecognised top-level keys produce a log warning (possible typo detection).
 - `notification_urgency` -- must be one of `low`, `normal`, `critical` (case-insensitive)
 - `icon_theme` -- must be one of `light`, `dark` (case-insensitive)
 
+**`[notifications]` section:**
+
+- `notifications` -- must be a table (if present)
+- `notifications.grouping` -- must be one of `flat`, `repo` (case-insensitive)
+- `notifications.repos` -- must be a table (if present)
+- Each `notifications.repos."owner/repo"` entry must be a table with:
+  - `enabled` -- must be a boolean
+  - `urgency` -- must be one of `low`, `normal`, `critical` (case-insensitive)
+  - `threshold` -- must be an integer >= 1
+
 **`[indicator]` section:**
 
 - `reconnect_interval` -- must be an integer >= 1
@@ -195,6 +225,16 @@ max_retries             = 5
 notification_threshold  = 5
 notification_urgency    = "low"
 icon_theme              = "light"
+
+[notifications]
+grouping = "repo"
+
+[notifications.repos."myorg/frontend"]
+urgency = "critical"
+threshold = 5
+
+[notifications.repos."myorg/noisy-repo"]
+enabled = false
 
 [indicator]
 reconnect_interval = 10
@@ -265,6 +305,18 @@ repos = []
 # icon_theme = "light"
 
 # ---------------------------------------------------------------------------
+# Notification grouping and per-repo overrides
+# ---------------------------------------------------------------------------
+
+# [notifications]
+# grouping = "flat"                  # "flat" (default) or "repo"
+#
+# [notifications.repos."owner/repo"]
+# enabled = true                     # Set to false to suppress notifications
+# urgency = "normal"                 # "low", "normal", or "critical"
+# threshold = 3                      # Individual vs summary threshold
+
+# ---------------------------------------------------------------------------
 # Indicator settings (system tray process)
 # ---------------------------------------------------------------------------
 
@@ -317,6 +369,10 @@ print(cfg.max_retries)               # 3
 print(cfg.notification_threshold)    # 3
 print(cfg.notification_urgency)      # "normal"
 print(cfg.icon_theme)                # "light"
+
+# Access notification grouping settings
+print(cfg.notifications.grouping)    # "flat"
+print(cfg.notifications.repos)       # {} (or dict of RepoNotificationConfig)
 
 # Load indicator-specific config ([indicator] section)
 ind = load_indicator_config()
