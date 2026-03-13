@@ -328,6 +328,11 @@ class TestMainConfigLoadFailure:
         mock_loop = MagicMock()
         mock_config_mod = MagicMock()
         mock_config_mod.load_config.side_effect = Exception("no config file")
+        mock_config_mod.IndicatorConfig.return_value = MagicMock(
+            reconnect_interval=10,
+            window_width=400,
+            max_window_height=500,
+        )
         mock_app_mod = MagicMock()
         mock_app_mod.IndicatorApp = mock_app_class
 
@@ -347,4 +352,10 @@ class TestMainConfigLoadFailure:
             mod.main()
 
         # IndicatorApp should be constructed with icon_theme="light" (the default)
-        mock_app_class.assert_called_once_with(icon_theme="light")
+        # and default indicator config values.
+        mock_app_class.assert_called_once()
+        call_kwargs = mock_app_class.call_args.kwargs
+        assert call_kwargs["icon_theme"] == "light"
+        assert call_kwargs["reconnect_interval"] == 10
+        assert call_kwargs["window_width"] == 400
+        assert call_kwargs["max_window_height"] == 500

@@ -51,10 +51,11 @@ Launch the indicator after verifying dependencies.
 1. Calls `_check_dependencies()` -- exits with code 1 on failure
 2. Parses `--verbose` flag for debug logging
 3. Configures logging
-4. Loads `config.toml` (best-effort) to read the `icon_theme` setting; falls
-   back to `"light"` if config loading fails for any reason
+4. Loads `config.toml` (best-effort) to read the `icon_theme` setting and the
+   `[indicator]` section (`IndicatorConfig`); falls back to defaults if config
+   loading fails for any reason
 5. Installs `gbulb` event loop (`gbulb.install()`)
-6. Creates an `IndicatorApp(icon_theme=...)` and runs it in a new event loop
+6. Creates an `IndicatorApp(icon_theme=..., reconnect_interval=..., window_width=..., max_window_height=...)` and runs it in a new event loop
 7. Calls `app.shutdown()` in a `finally` block for clean resource release
 
 **CLI arguments:**
@@ -166,6 +167,8 @@ class DaemonClient:
         self,
         on_prs_changed: Callable[[list[PRInfo]], None],
         on_connection_changed: Callable[[bool], None],
+        *,
+        reconnect_interval: int = _RECONNECT_INTERVAL_S,
     ) -> None: ...
 ```
 
@@ -175,10 +178,11 @@ bus, obtains a proxy for the daemon's interface, subscribes to the
 
 **Constructor parameters:**
 
-| Parameter | Type | Description |
-|---|---|---|
-| `on_prs_changed` | `Callable[[list[PRInfo]], None]` | Called when the daemon emits `PullRequestsChanged` |
-| `on_connection_changed` | `Callable[[bool], None]` | Called when connection state changes (`True` = connected) |
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `on_prs_changed` | `Callable[[list[PRInfo]], None]` | *(required)* | Called when the daemon emits `PullRequestsChanged` |
+| `on_connection_changed` | `Callable[[bool], None]` | *(required)* | Called when connection state changes (`True` = connected) |
+| `reconnect_interval` | `int` | `10` | Seconds between reconnection attempts (keyword-only) |
 
 #### Properties
 
@@ -251,14 +255,27 @@ Returns the updated PR list, or an empty list on failure.
 
 ```python
 class IndicatorApp:
-    def __init__(self, *, icon_theme: str = "light") -> None: ...
+    def __init__(
+        self,
+        *,
+        icon_theme: str = "light",
+        reconnect_interval: int = 10,
+        window_width: int = 400,
+        max_window_height: int = 500,
+    ) -> None: ...
 ```
 
 Main application that bridges D-Bus, tray icon, and popup window. Creates
 and wires together a `DaemonClient`, `TrayIcon`, and `PRWindow`.
 
-The `icon_theme` parameter is forwarded to `TrayIcon` to select the icon
-variant directory (`resources/light/` or `resources/dark/`).
+**Constructor parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `icon_theme` | `str` | `"light"` | Forwarded to `TrayIcon` to select the icon variant directory |
+| `reconnect_interval` | `int` | `10` | Forwarded to `DaemonClient` -- seconds between reconnect attempts |
+| `window_width` | `int` | `400` | Forwarded to `PRWindow` -- popup window width in pixels |
+| `max_window_height` | `int` | `500` | Forwarded to `PRWindow` -- maximum popup window height in pixels |
 
 The lifecycle is:
 1. `run()` -- register signal handlers, connect to daemon, enter event loop
@@ -399,6 +416,9 @@ class PRWindow:
         on_pr_clicked: Callable[[str], None],
         on_refresh: Callable[[], None],
         on_visibility_changed: Callable[[bool], None] | None = None,
+        *,
+        window_width: int = _WINDOW_WIDTH,
+        max_window_height: int = _MAX_WINDOW_HEIGHT,
     ) -> None: ...
 ```
 
@@ -412,6 +432,8 @@ list, and a status footer.
 | `on_pr_clicked` | `Callable[[str], None]` | *(required)* | Called with the PR URL when a row is clicked |
 | `on_refresh` | `Callable[[], None]` | *(required)* | Called when the header refresh button is pressed |
 | `on_visibility_changed` | `Callable[[bool], None] \| None` | `None` | Called when the window is shown or hidden |
+| `window_width` | `int` | `400` | Popup window width in pixels (keyword-only) |
+| `max_window_height` | `int` | `500` | Maximum popup window height in pixels (keyword-only) |
 
 #### Properties
 
@@ -660,7 +682,12 @@ import gbulb
 from forgewatch.indicator.app import IndicatorApp
 
 gbulb.install()
-app = IndicatorApp(icon_theme="dark")  # or "light" (default)
+app = IndicatorApp(
+    icon_theme="dark",
+    reconnect_interval=30,   # retry D-Bus connection every 30s
+    window_width=500,        # wider popup window
+    max_window_height=600,   # taller popup window
+)
 loop = asyncio.new_event_loop()
 try:
     loop.run_until_complete(app.run())
@@ -686,7 +713,8 @@ finally:
   async coroutines by wrapping them in `asyncio.ensure_future()` and storing
   task references to prevent garbage collection
 - Auto-reconnection: when the daemon exits or crashes, the client detects the
-  `NameOwnerChanged` signal and retries the connection every 10 seconds
+  `NameOwnerChanged` signal and retries the connection at a configurable
+  interval (default: 10 seconds, set via `reconnect_interval`)
 - D-Bus coordinates (`BUS_NAME`, `OBJECT_PATH`, `INTERFACE_NAME`) are
   duplicated from `dbus_service.py` rather than imported, reinforcing the
   process boundary

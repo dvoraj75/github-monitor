@@ -20,6 +20,7 @@ Internal constants (prefixed with `_`):
 | `_VALID_LOG_LEVELS` | `frozenset[str]` | `{"debug", "info", "warning", "error"}` | Allowed values for `log_level` |
 | `_VALID_URGENCIES` | `frozenset[str]` | `{"low", "normal", "critical"}` | Allowed values for `notification_urgency` |
 | `_VALID_ICON_THEMES` | `frozenset[str]` | `{"light", "dark"}` | Allowed values for `icon_theme` |
+| `_KNOWN_KEYS` | `frozenset[str]` | *(all recognised top-level keys)* | Used by `_warn_unknown_keys()` to detect typos |
 
 ## `ConfigError`
 
@@ -30,16 +31,19 @@ class ConfigError(Exception): ...
 Raised when configuration is invalid or missing. All validation failures produce
 a `ConfigError` with a human-readable message describing what went wrong.
 
+Validation now collects **all** errors and raises a single `ConfigError` with
+every problem listed (one per line), so the user can fix everything in one pass.
+
 **Examples of error messages:**
 
 - `"Config file not found: /path/to/config.toml"`
 - `"Invalid TOML in /path/to/config.toml: ..."`
-- `"github_token is required (set in config or GITHUB_TOKEN env var)"`
+- `"github_token is required (set in config.toml or export GITHUB_TOKEN=ghp_...)"`
 - `"github_username is required"`
 - `"poll_interval must be an integer, got str"`
-- `"poll_interval must be >= 30, got 10"`
+- `"poll_interval must be >= 30, got 10 (GitHub recommends 300s for personal tokens)"`
 - `"repos must be a list"`
-- `"Invalid repo format: 'not-valid' (expected 'owner/name')"`
+- `"Invalid repo format: 'not-valid' (expected 'owner/name') — example: 'octocat/Hello-World'"`
 - `"log_level must be one of ['debug', 'error', 'info', 'warning'], got 'verbose'"`
 - `"notifications_enabled must be a boolean, got str"`
 - `"github_base_url must start with http:// or https://, got 'ftp://...'"`
@@ -93,6 +97,25 @@ cfg = load_config()
 cfg.poll_interval = 60  # raises AttributeError
 ```
 
+## `IndicatorConfig`
+
+```python
+@dataclass(frozen=True)
+class IndicatorConfig:
+    reconnect_interval: int = 10
+    window_width: int = 400
+    max_window_height: int = 500
+```
+
+An immutable (frozen) dataclass holding validated indicator-specific settings
+from the `[indicator]` TOML section.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `reconnect_interval` | `int` | `10` | Seconds between D-Bus reconnect attempts (>= 1) |
+| `window_width` | `int` | `400` | Popup window width in pixels (>= 200) |
+| `max_window_height` | `int` | `500` | Maximum popup window height in pixels (>= 200) |
+
 ## `load_config()`
 
 ```python
@@ -120,9 +143,10 @@ A `Config` instance with all fields validated.
 
 1. Resolves the file path via `_resolve_path(path)`
 2. Reads and parses the TOML file
-3. Applies `GITHUB_TOKEN` env var override (if set and non-empty)
-4. Validates all fields via `_validate()`
-5. Returns a `Config` instance
+3. Warns about unrecognised top-level keys via `_warn_unknown_keys()`
+4. Applies `GITHUB_TOKEN` env var override (if set and non-empty)
+5. Validates all fields via `_validate()` (collects all errors before raising)
+6. Returns a `Config` instance
 
 ### Example
 
@@ -137,6 +161,52 @@ cfg = load_config("/etc/forgewatch/config.toml")
 
 # String path also works
 cfg = load_config("./my-config.toml")
+```
+
+## `load_indicator_config()`
+
+```python
+def load_indicator_config(path: Path | str | None = None) -> IndicatorConfig:
+```
+
+Load indicator-specific configuration from the `[indicator]` TOML section and
+return a validated `IndicatorConfig` instance.
+
+### Parameters
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `path` | `Path \| str \| None` | `None` | Explicit config file path. If `None`, resolved via env var or default. |
+
+### Returns
+
+An `IndicatorConfig` instance with all fields validated.
+
+### Raises
+
+- `ConfigError` -- if the `[indicator]` section contains invalid values
+
+### Behavior
+
+1. Resolves the file path via `_resolve_path(path)`
+2. If the file does not exist or contains invalid TOML, returns defaults
+3. If the `[indicator]` section is missing, returns defaults
+4. Validates all fields (collects all errors before raising)
+5. Returns an `IndicatorConfig` instance
+
+### Example
+
+```python
+from forgewatch.config import load_indicator_config
+
+# Defaults when [indicator] section is absent
+cfg = load_indicator_config()
+assert cfg.reconnect_interval == 10
+assert cfg.window_width == 400
+assert cfg.max_window_height == 500
+
+# Custom path
+cfg = load_indicator_config("/etc/forgewatch/config.toml")
 ```
 
 ## `_resolve_path()` (internal)
@@ -155,42 +225,83 @@ Resolves the config file path using three-tier precedence:
 
 - `ConfigError` -- if the resolved path does not exist
 
-## Validation helpers (internal)
+## `_warn_unknown_keys()` (internal)
 
-Validation is split into reusable helper functions:
+```python
+def _warn_unknown_keys(raw: dict[str, object]) -> None:
+```
+
+Logs a warning for each top-level key not in `_KNOWN_KEYS`. Helps users
+catch typos in their config file.
+
+## Error-collecting validation helpers (internal)
+
+These helpers append error messages to an `errors` list instead of raising
+immediately, enabling multi-error reporting.
+
+### `_collect_str(raw, key, error_msg, errors) -> str`
+
+Extracts a required non-empty string field. Appends to `errors` if the value
+is missing, empty, or not a string.
+
+### `_collect_bool(raw, key, *, default, errors) -> bool`
+
+Extracts an optional boolean field with a default value. Appends to `errors`
+if the value is present but not a boolean.
+
+### `_collect_int_min(raw, key, *, default, minimum, errors) -> int`
+
+Extracts an optional integer field with a minimum bound. Appends to `errors`
+if the value is not an integer or is below the minimum.
+
+### `_collect_choice(raw, key, *, default, choices, errors) -> str`
+
+Extracts an optional string field validated against a set of allowed values.
+The value is normalised to lowercase before comparison. Appends to `errors`
+if the value is not a string or not in the allowed set.
+
+### `_collect_base_url(raw, errors) -> str`
+
+Extracts and validates the `github_base_url` field. Must start with `http://`
+or `https://`. Trailing slashes are stripped. Appends to `errors` on invalid
+values.
+
+### `_collect_repos(raw, errors) -> list[str]`
+
+Extracts and validates the `repos` list. Each entry must be a string matching
+the `_REPO_PATTERN` regex (`owner/name` format). Appends to `errors` on
+invalid values.
+
+## Legacy validation helpers (internal)
+
+These raise-immediately helpers are kept for backward compatibility but are no
+longer used by `_validate()`:
 
 ### `_require_str(raw, key, error_msg) -> str`
 
-Extracts a required non-empty string field. Raises `ConfigError` with the
-provided message if the value is missing, empty, or not a string.
+Extracts a required non-empty string field. Raises `ConfigError` immediately.
 
 ### `_validate_bool(raw, key, *, default) -> bool`
 
-Extracts an optional boolean field with a default value. Raises `ConfigError`
-if the value is present but not a boolean.
+Extracts an optional boolean field. Raises `ConfigError` immediately.
 
 ### `_validate_int_min(raw, key, *, default, minimum) -> int`
 
 Extracts an optional integer field with a minimum bound. Raises `ConfigError`
-if the value is not an integer or is below the minimum.
+immediately.
 
 ### `_validate_choice(raw, key, *, default, choices) -> str`
 
-Extracts an optional string field validated against a set of allowed values.
-The value is normalised to lowercase before comparison. Raises `ConfigError`
-if the value is not a string or not in the allowed set.
+Extracts an optional string field validated against allowed values. Raises
+`ConfigError` immediately.
 
 ### `_validate_base_url(raw) -> str`
 
-Extracts and validates the `github_base_url` field. Must start with `http://`
-or `https://`. Trailing slashes are stripped. Raises `ConfigError` on invalid
-values.
+Extracts and validates `github_base_url`. Raises `ConfigError` immediately.
 
 ### `_validate_repos(raw) -> list[str]`
 
-Extracts and validates the `repos` list. Each entry must be a string matching
-the `_REPO_PATTERN` regex (`owner/name` format). Raises `ConfigError` on
-invalid values.
+Extracts and validates the `repos` list. Raises `ConfigError` immediately.
 
 ## `_validate()` (internal)
 
@@ -198,24 +309,26 @@ invalid values.
 def _validate(raw: dict[str, object]) -> Config:
 ```
 
-Validates the raw TOML dict and returns a `Config` instance. Delegates to the
-individual validation helpers above.
+Validates the raw TOML dict and returns a `Config` instance. Collects **all**
+validation errors via the `_collect_*` helpers and raises a single
+`ConfigError` with every problem reported, so the user can fix everything in
+one pass.
 
 ### Validation rules
 
-1. `github_token` -- must be a `str` and non-empty (via `_require_str`)
-2. `github_username` -- must be a `str` and non-empty (via `_require_str`)
-3. `poll_interval` -- must be an `int` >= 30 (via `_validate_int_min`)
-4. `repos` -- must be a `list` of strings matching `_REPO_PATTERN` (via `_validate_repos`)
-5. `log_level` -- must be one of `_VALID_LOG_LEVELS` (via `_validate_choice`)
-6. `notify_on_first_poll` -- must be a `bool` (via `_validate_bool`)
-7. `notifications_enabled` -- must be a `bool` (via `_validate_bool`)
-8. `dbus_enabled` -- must be a `bool` (via `_validate_bool`)
-9. `github_base_url` -- must start with `http://` or `https://` (via `_validate_base_url`)
-10. `max_retries` -- must be an `int` >= 0 (via `_validate_int_min`)
-11. `notification_threshold` -- must be an `int` >= 1 (via `_validate_int_min`)
-12. `notification_urgency` -- must be one of `_VALID_URGENCIES` (via `_validate_choice`)
-13. `icon_theme` -- must be one of `_VALID_ICON_THEMES` (via `_validate_choice`)
+1. `github_token` -- must be a `str` and non-empty (via `_collect_str`)
+2. `github_username` -- must be a `str` and non-empty (via `_collect_str`)
+3. `poll_interval` -- must be an `int` >= 30 (via `_collect_int_min`); error enhanced with GitHub recommendation
+4. `repos` -- must be a `list` of strings matching `_REPO_PATTERN` (via `_collect_repos`); error includes example
+5. `log_level` -- must be one of `_VALID_LOG_LEVELS` (via `_collect_choice`)
+6. `notify_on_first_poll` -- must be a `bool` (via `_collect_bool`)
+7. `notifications_enabled` -- must be a `bool` (via `_collect_bool`)
+8. `dbus_enabled` -- must be a `bool` (via `_collect_bool`)
+9. `github_base_url` -- must start with `http://` or `https://` (via `_collect_base_url`)
+10. `max_retries` -- must be an `int` >= 0 (via `_collect_int_min`)
+11. `notification_threshold` -- must be an `int` >= 1 (via `_collect_int_min`)
+12. `notification_urgency` -- must be one of `_VALID_URGENCIES` (via `_collect_choice`)
+13. `icon_theme` -- must be one of `_VALID_ICON_THEMES` (via `_collect_choice`)
 
 ## Tests
 
@@ -231,3 +344,9 @@ Tests in `tests/test_config.py` covering:
   notification_urgency, icon_theme) -- defaults, valid values, invalid types, edge cases
   (case-insensitivity, trailing slash stripping, zero retries)
 - Edge cases (empty token/username strings, boundary poll_interval = 30)
+- Unknown key warnings (typos logged, known keys silent, `[indicator]` section recognised)
+- Multi-error collection (multiple validation failures in a single `ConfigError`,
+  actionable hints in error messages)
+- `IndicatorConfig` via `load_indicator_config()` -- defaults, custom values,
+  partial values, missing file, invalid TOML, boundary validation for each field,
+  wrong types, multiple errors collected, frozen dataclass

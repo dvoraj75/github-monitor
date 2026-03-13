@@ -100,15 +100,23 @@ def main() -> None:
 
     logger = logging.getLogger(__name__)
 
-    # Load icon_theme from config (best-effort: default to "light" on failure).
+    # Load config (best-effort: default to "light" theme and default
+    # IndicatorConfig on failure).
     icon_theme = "light"
+    indicator_config = None
     try:
-        from forgewatch.config import load_config  # noqa: PLC0415
+        from forgewatch.config import IndicatorConfig, load_config, load_indicator_config  # noqa: PLC0415
 
         cfg = load_config()
         icon_theme = cfg.icon_theme
+        indicator_config = load_indicator_config()
     except Exception:  # noqa: BLE001
-        logger.warning("Failed to load config, using default icon theme 'light'", exc_info=True)
+        logger.warning("Failed to load config, using defaults", exc_info=True)
+
+    if indicator_config is None:
+        from forgewatch.config import IndicatorConfig  # noqa: PLC0415
+
+        indicator_config = IndicatorConfig()
 
     # Install gbulb BEFORE obtaining an event loop so the GLib-based
     # policy is active from the start.
@@ -120,7 +128,12 @@ def main() -> None:
     # which must only happen after dependency checks have passed.
     from .app import IndicatorApp  # noqa: PLC0415
 
-    app = IndicatorApp(icon_theme=icon_theme)
+    app = IndicatorApp(
+        icon_theme=icon_theme,
+        reconnect_interval=indicator_config.reconnect_interval,
+        window_width=indicator_config.window_width,
+        max_window_height=indicator_config.max_window_height,
+    )
     loop = asyncio.new_event_loop()
     try:
         loop.run_until_complete(app.run())

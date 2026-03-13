@@ -116,10 +116,15 @@ class PRWindow:
         on_pr_clicked: Callable[[str], None],
         on_refresh: Callable[[], None],
         on_visibility_changed: Callable[[bool], None] | None = None,
+        *,
+        window_width: int = _WINDOW_WIDTH,
+        max_window_height: int = _MAX_WINDOW_HEIGHT,
     ) -> None:
         self._on_pr_clicked = on_pr_clicked
         self._on_refresh = on_refresh
         self._on_visibility_changed = on_visibility_changed
+        self._window_width = window_width
+        self._max_window_height = max_window_height
 
         # Maps ListBoxRow index → PR URL for click handling.
         self._row_urls: dict[int, str] = {}
@@ -138,7 +143,7 @@ class PRWindow:
         # Content area that can be swapped between list and empty/disconnected state.
         self._scrolled = Gtk.ScrolledWindow()
         self._scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        self._scrolled.set_max_content_height(_MAX_WINDOW_HEIGHT - 100)
+        self._scrolled.set_max_content_height(self._max_window_height - 100)
         self._scrolled.set_propagate_natural_height(True)
         self._scrolled.add(self._listbox)
 
@@ -233,7 +238,7 @@ class PRWindow:
         window.set_skip_taskbar_hint(True)
         window.set_skip_pager_hint(True)
         window.set_type_hint(Gdk.WindowTypeHint.POPUP_MENU)
-        window.set_default_size(_WINDOW_WIDTH, -1)
+        window.set_default_size(self._window_width, -1)
         window.get_style_context().add_class("pr-window")
 
         window.connect("focus-out-event", self._on_focus_out)
