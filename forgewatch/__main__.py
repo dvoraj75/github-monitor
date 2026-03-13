@@ -13,12 +13,18 @@ from __future__ import annotations
 import argparse
 
 
-def _build_parser() -> argparse.ArgumentParser:
+def build_full_parser() -> argparse.ArgumentParser:
     """Build the unified argument parser.
 
     Top-level flags (``-c``, ``-v``) are for daemon mode.  Subcommands
-    (``setup``, ``service``, ``uninstall``) are for management tasks.
+    (``setup``, ``service``, ``uninstall``, ``completions``) are for
+    management tasks.
+
+    This function is public so that :func:`forgewatch.cli.dispatch` can
+    obtain the full parser for shell-completion generation via ``shtab``.
     """
+    import shtab  # noqa: PLC0415
+
     from .cli import add_subcommands  # noqa: PLC0415
 
     parser = argparse.ArgumentParser(
@@ -26,13 +32,14 @@ def _build_parser() -> argparse.ArgumentParser:
         description="ForgeWatch — GitHub PR Monitor",
         epilog="Run without a command to start the daemon.",
     )
-    parser.add_argument(
+    config_action = parser.add_argument(
         "-c",
         "--config",
         type=str,
         default=None,
         help="Path to config.toml",
     )
+    config_action.complete = shtab.FILE  # type: ignore[attr-defined]
     parser.add_argument(
         "-v",
         "--verbose",
@@ -52,7 +59,7 @@ def main() -> None:
     Parses arguments with the unified parser and dispatches to the
     management CLI or starts the daemon.
     """
-    parser = _build_parser()
+    parser = build_full_parser()
     args = parser.parse_args()
 
     if args.command is not None:

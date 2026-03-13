@@ -161,10 +161,11 @@ See [modules/indicator.md](modules/indicator.md) for the full API reference.
 
 ### CLI Management (`cli/`)
 
-A management interface providing `setup`, `service`, and `uninstall`
-subcommands for installing and managing ForgeWatch as a systemd user
-service. Uses stdlib only (no extra dependencies beyond the Python standard
-library). The package consists of:
+A management interface providing `setup`, `service`, `uninstall`, and
+`completions` subcommands for installing and managing ForgeWatch as a
+systemd user service. Uses stdlib only for most subcommands; the
+`completions` subcommand uses `shtab` for shell-completion generation.
+The package consists of:
 
 - **Parser and dispatch** (`__init__.py`) -- argparse subcommand parser with
   lazy imports to avoid loading unused code.
@@ -184,10 +185,15 @@ library). The package consists of:
 - **Bundled service files** (`systemd/`) -- `.service` files accessed via
   `importlib.resources`, allowing installation from PyPI packages without a git
   checkout.
+- **Shell completions** -- the `completions` subcommand generates Bash, Zsh,
+  or tcsh completion scripts via `shtab`. The unified parser in `__main__.py`
+  (`build_full_parser()`) attaches `shtab.FILE` metadata to the `--config`
+  flag for file-path completion.
 
-Subcommand detection happens in `__main__.py` by checking `sys.argv[1]`
-against a known set of command names before the daemon argparse runs, ensuring
-full backward compatibility with existing daemon flags (`-c`, `-v`).
+Subcommand detection happens in `__main__.py` via the unified argparse
+parser. When `args.command` is not `None`, the request is dispatched to
+`cli.dispatch(args)`. Otherwise the daemon starts, ensuring full backward
+compatibility with existing daemon flags (`-c`, `-v`).
 
 See [modules/cli.md](modules/cli.md) for the full API reference.
 

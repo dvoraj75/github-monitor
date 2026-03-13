@@ -107,7 +107,7 @@ forgewatch/
   dbus_service.py   D-Bus interface (dbus-next)
   config.py         TOML config loading + validation
   url_opener.py     Shared URL opener (XDG portal + xdg-open)
-  cli/              Management subcommands (setup, service, uninstall)
+  cli/              Management subcommands (setup, service, uninstall, completions)
   indicator/        System tray icon + popup window (GTK3, separate process)
 ```
 

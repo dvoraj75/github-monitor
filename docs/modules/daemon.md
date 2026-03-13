@@ -181,19 +181,20 @@ parsing and logging setup.
 
 The `main()` function in `__main__.py` is the single entry point for all
 `forgewatch` invocations.  A unified argument parser exposes both daemon
-flags (`-c`, `-v`) and management subcommands (`setup`, `service`, `uninstall`)
-so that `forgewatch --help` shows everything:
+flags (`-c`, `-v`) and management subcommands (`setup`, `service`, `uninstall`,
+`completions`) so that `forgewatch --help` shows everything:
 
 ```
-usage: forgewatch [-h] [-c CONFIG] [-v] {setup,service,uninstall} ...
+usage: forgewatch [-h] [-c CONFIG] [-v] {setup,service,uninstall,completions} ...
 
 ForgeWatch — GitHub PR Monitor
 
 positional arguments:
-  {setup,service,uninstall}
+  {setup,service,uninstall,completions}
     setup               Initial setup wizard
     service             Manage systemd services
     uninstall           Remove services and optionally config
+    completions         Generate shell completions
 
 options:
   -h, --help            show this help message and exit
@@ -203,7 +204,7 @@ options:
 Run without a command to start the daemon.
 ```
 
-The parser is built by `_build_parser()`, which calls
+The parser is built by `build_full_parser()`, which calls
 `cli.add_subcommands()` to register the management subcommands.  After
 parsing, `main()` checks `args.command`:
 
@@ -218,6 +219,7 @@ forgewatch setup --config-only  # only create config.toml
 forgewatch setup --service-only # only install + start systemd services
 forgewatch service <action>     # start | stop | restart | status | install | enable | disable
 forgewatch uninstall            # remove services, optionally remove config
+forgewatch completions <shell>  # generate shell completions (bash, zsh, tcsh)
 ```
 
 See [cli module docs](cli.md) for the full API reference.

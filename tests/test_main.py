@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from forgewatch.__main__ import _build_parser, main
+from forgewatch.__main__ import build_full_parser, main
 from forgewatch.config import Config, ConfigError
 
 # ---------------------------------------------------------------------------
@@ -213,14 +213,14 @@ class TestCliDispatch:
 
     def test_unified_help_includes_subcommands(self) -> None:
         """--help output should mention all management subcommands."""
-        parser = _build_parser()
+        parser = build_full_parser()
         help_text = parser.format_help()
         assert "setup" in help_text
         assert "service" in help_text
         assert "uninstall" in help_text
 
     def test_unified_help_includes_daemon_flags(self) -> None:
-        parser = _build_parser()
+        parser = build_full_parser()
         help_text = parser.format_help()
         assert "--config" in help_text
         assert "--verbose" in help_text

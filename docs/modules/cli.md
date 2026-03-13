@@ -3,8 +3,8 @@
 Package: `forgewatch.cli`
 
 CLI management subcommands for installing and managing ForgeWatch as a
-systemd user service. This package uses **stdlib only** -- no extra dependencies
-beyond the Python standard library.
+systemd user service. Most subcommands use **stdlib only**; the `completions`
+subcommand uses `shtab` for shell-completion generation.
 
 ## Command overview
 
@@ -12,13 +12,14 @@ beyond the Python standard library.
 forgewatch setup [--config-only | --service-only]
 forgewatch service {install,start,stop,restart,status,enable,disable}
 forgewatch uninstall
+forgewatch completions {bash,zsh,tcsh}
 ```
 
 When the first argument to `forgewatch` is a known subcommand (`setup`,
-`service`, `uninstall`), the unified parser in `__main__.py` dispatches to
-`cli.dispatch()`. Otherwise, the daemon starts as usual for full backward
-compatibility. Running `forgewatch --help` shows both daemon flags and
-management subcommands.
+`service`, `uninstall`, `completions`), the unified parser in `__main__.py`
+dispatches to `cli.dispatch()`. Otherwise, the daemon starts as usual for
+full backward compatibility. Running `forgewatch --help` shows both daemon
+flags and management subcommands.
 
 ## Module structure
 
@@ -44,7 +45,7 @@ cli/
 ### `add_subcommands(subparsers) -> None`
 
 Add CLI management subcommands to an existing subparsers group. This is called
-by `__main__._build_parser()` to register subcommands on the unified parser.
+by `__main__.build_full_parser()` to register subcommands on the unified parser.
 
 | Parameter | Type | Description |
 |---|---|---|
@@ -66,6 +67,7 @@ Dispatch targets (lazy-imported inside the function body):
 | `setup` | `setup.run_setup(config_only=..., service_only=...)` |
 | `service` | `service.run_service(action=...)` |
 | `uninstall` | `uninstall.run_uninstall()` |
+| `completions` | `shtab.complete(parser, args.shell)` (inline, uses `build_full_parser()`) |
 
 ### `build_parser() -> argparse.ArgumentParser`
 
@@ -73,13 +75,14 @@ Build a standalone argparse parser for CLI management subcommands. Uses
 `add_subcommands()` internally. This parser does **not** include daemon flags
 (`-c`, `-v`) -- those live on the unified parser in `__main__.py`.
 
-Returns an `ArgumentParser` with three subcommands:
+Returns an `ArgumentParser` with four subcommands:
 
 | Subcommand | Arguments | Description |
 |---|---|---|
 | `setup` | `--config-only`, `--service-only` (mutually exclusive) | Interactive setup wizard |
 | `service` | `action` (positional, choices: `install`, `start`, `stop`, `restart`, `status`, `enable`, `disable`) | Manage systemd services |
 | `uninstall` | *(none)* | Remove services and optionally config |
+| `completions` | `shell` (positional, choices: `bash`, `zsh`, `tcsh`) | Generate shell completions |
 
 ### `run_cli(argv: list[str] | None = None) -> None`
 
@@ -533,18 +536,21 @@ cleans up entries created by older versions of the install script.
 
 ## Design notes
 
-- **Stdlib only:** The entire CLI package uses only the Python standard library
-  (`argparse`, `subprocess`, `shutil`, `pathlib`, `importlib.resources`). This
-  keeps the dependency footprint minimal and ensures the management commands
-  work even if optional runtime dependencies (aiohttp, dbus-next) fail to
-  import.
+- **Mostly stdlib:** The CLI package uses the Python standard library
+  (`argparse`, `subprocess`, `shutil`, `pathlib`, `importlib.resources`) for
+  most subcommands. The `completions` subcommand uses `shtab` for
+  shell-completion generation. This keeps the dependency footprint minimal
+  and ensures the management commands work even if optional runtime
+  dependencies (aiohttp, dbus-next) fail to import.
 - **Lazy imports:** Subcommand modules (`setup.py`, `service.py`,
   `uninstall.py`) are imported lazily inside `run_cli()` to avoid loading
-  unused code when only one subcommand is invoked.
+  unused code when only one subcommand is invoked. `shtab` is also imported
+  lazily inside `dispatch()` and `build_full_parser()`.
 - **Subcommand detection:** Happens in `__main__.py` via the unified argparse
-  parser. When `args.command` is not `None`, the request is dispatched to
-  `cli.dispatch(args)`. Otherwise the daemon starts. This avoids conflicts
-  between daemon flags (`-c`, `-v`) and subcommand names.
+  parser (`build_full_parser()`). When `args.command` is not `None`, the
+  request is dispatched to `cli.dispatch(args)`. Otherwise the daemon starts.
+  This avoids conflicts between daemon flags (`-c`, `-v`) and subcommand
+  names.
 - **Separate stdout/stderr TTY detection:** `_output.py` uses two separate
   `isatty()` checks because `warn()` and `err()` write to stderr (which may
   have different TTY status than stdout when piping).

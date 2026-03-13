@@ -80,6 +80,28 @@ class TestBuildParser:
         args = parser.parse_args([])
         assert args.command is None
 
+    def test_completions_subcommand_accepted(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["completions", "bash"])
+        assert args.command == "completions"
+        assert args.shell == "bash"
+
+    def test_completions_all_shells_valid(self) -> None:
+        parser = build_parser()
+        for shell in ("bash", "zsh", "tcsh"):
+            args = parser.parse_args(["completions", shell])
+            assert args.shell == shell
+
+    def test_completions_invalid_shell_rejected(self) -> None:
+        parser = build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args(["completions", "fish"])
+
+    def test_completions_missing_shell_rejected(self) -> None:
+        parser = build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args(["completions"])
+
 
 # ---------------------------------------------------------------------------
 # run_cli — dispatch logic
@@ -143,6 +165,24 @@ class TestRunCli:
     def test_dispatches_uninstall(self, mock_run_uninstall: MagicMock) -> None:
         run_cli(["uninstall"])
         mock_run_uninstall.assert_called_once_with()
+
+    def test_dispatches_completions_bash(self, capsys: pytest.CaptureFixture[str]) -> None:
+        run_cli(["completions", "bash"])
+        output = capsys.readouterr().out
+        assert len(output) > 0
+        assert "forgewatch" in output
+
+    def test_dispatches_completions_zsh(self, capsys: pytest.CaptureFixture[str]) -> None:
+        run_cli(["completions", "zsh"])
+        output = capsys.readouterr().out
+        assert len(output) > 0
+        assert "forgewatch" in output
+
+    def test_dispatches_completions_tcsh(self, capsys: pytest.CaptureFixture[str]) -> None:
+        run_cli(["completions", "tcsh"])
+        output = capsys.readouterr().out
+        assert len(output) > 0
+        assert "forgewatch" in output
 
     def test_no_command_prints_help_and_exits(self) -> None:
         with pytest.raises(SystemExit, match="1"):

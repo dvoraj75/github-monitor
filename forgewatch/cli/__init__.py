@@ -20,7 +20,8 @@ def add_subcommands(subparsers: _SubParsersAction[argparse.ArgumentParser]) -> N
     ----------
     subparsers:
         A subparsers action (from ``parser.add_subparsers()``) to which
-        ``setup``, ``service``, and ``uninstall`` subcommands are added.
+        ``setup``, ``service``, ``uninstall``, and ``completions``
+        subcommands are added.
     """
     # setup
     setup_parser = subparsers.add_parser("setup", help="Initial setup wizard")
@@ -47,6 +48,14 @@ def add_subcommands(subparsers: _SubParsersAction[argparse.ArgumentParser]) -> N
     # uninstall
     subparsers.add_parser("uninstall", help="Remove services and optionally config")
 
+    # completions
+    comp = subparsers.add_parser("completions", help="Generate shell completions")
+    comp.add_argument(
+        "shell",
+        choices=["bash", "zsh", "tcsh"],
+        help="Shell to generate completions for",
+    )
+
 
 def dispatch(args: argparse.Namespace) -> None:
     """Dispatch to the appropriate CLI subcommand handler.
@@ -72,13 +81,22 @@ def dispatch(args: argparse.Namespace) -> None:
 
         run_uninstall()
 
+    elif args.command == "completions":
+        import shtab  # noqa: PLC0415
+
+        from forgewatch.__main__ import build_full_parser  # noqa: PLC0415
+
+        parser = build_full_parser()
+        print(shtab.complete(parser, args.shell))  # noqa: T201
+
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the argparse parser for CLI management subcommands.
 
-    Returns an ``ArgumentParser`` with ``setup``, ``service``, and
-    ``uninstall`` subcommands.  This is used by :func:`run_cli` and by
-    tests that need to inspect the parser structure independently.
+    Returns an ``ArgumentParser`` with ``setup``, ``service``,
+    ``uninstall``, and ``completions`` subcommands.  This is used by
+    :func:`run_cli` and by tests that need to inspect the parser
+    structure independently.
     """
     parser = argparse.ArgumentParser(
         prog="forgewatch",

@@ -18,7 +18,7 @@ Key traits:
 ```
 __main__.py          CLI entry point -- dispatches to CLI subcommands or daemon
     |
-    +---> cli/               Management subcommands (setup, service, uninstall)
+    +---> cli/               Management subcommands (setup, service, uninstall, completions)
     |       __init__.py      Argparse parser + run_cli() dispatch
     |       setup.py         Interactive setup wizard (config + systemd)
     |       service.py       Systemd service management (start/stop/status/...)
@@ -56,7 +56,7 @@ indicator/               Separate process -- system tray icon + popup window
 
 | Module | Role |
 |---|---|
-| `__main__.py` | CLI entry point. Builds a unified argparse parser with daemon flags (`-c`, `-v`) and management subcommands (`setup`, `service`, `uninstall`). When `args.command` is set, dispatches to `cli.dispatch()`. Otherwise starts the daemon. |
+| `__main__.py` | CLI entry point. Builds a unified argparse parser with daemon flags (`-c`, `-v`) and management subcommands (`setup`, `service`, `uninstall`, `completions`). When `args.command` is set, dispatches to `cli.dispatch()`. Otherwise starts the daemon. Also integrates `shtab` for shell-completion metadata on the `--config` flag. |
 | `cli/__init__.py` | Registers subcommands via `add_subcommands()`, dispatches via `dispatch()`. Also provides `build_parser()` and `run_cli()` for standalone/test use. |
 | `cli/setup.py` | Interactive setup wizard. Config file creation (token, username, poll interval, repos), systemd service installation, and enable+start. Supports `--config-only` and `--service-only` flags. |
 | `cli/service.py` | Thin CLI layer over `_systemd.py`. Actions: `install`, `start`, `stop`, `restart`, `status`, `enable`, `disable`. Manages both daemon and indicator services. |
@@ -118,6 +118,9 @@ uv run forgewatch service install            # install systemd unit files
 uv run forgewatch service enable             # enable autostart
 uv run forgewatch service disable            # disable autostart
 uv run forgewatch uninstall                  # remove services + optionally config
+uv run forgewatch completions bash           # generate bash completions
+uv run forgewatch completions zsh            # generate zsh completions
+uv run forgewatch completions tcsh           # generate tcsh completions
 
 # Install as systemd user service
 systemctl --user enable --now forgewatch
@@ -199,7 +202,7 @@ uv run mypy forgewatch
 | `systemd/forgewatch.service` | Systemd user unit file for the daemon. |
 | `systemd/forgewatch-indicator.service` | Systemd user unit file for the indicator. Depends on the daemon service. |
 | `forgewatch/indicator/` | System tray indicator package. Separate process, connects to daemon over D-Bus. Requires GTK3/AppIndicator3/gbulb. |
-| `forgewatch/cli/` | CLI management subcommands package. Setup wizard, service management, uninstall. Stdlib only (no extra deps). |
+| `forgewatch/cli/` | CLI management subcommands package. Setup wizard, service management, uninstall, shell completions. The `completions` subcommand uses `shtab`; all other subcommands are stdlib only. |
 | `forgewatch/cli/systemd/` | Bundled `.service` files accessed via `importlib.resources`. |
 | `forgewatch/url_opener.py` | Shared URL opener (XDG portal + xdg-open fallback). Used by both notifier and indicator. |
 | `docs/` | Architecture, configuration, development, and module documentation. |
@@ -254,19 +257,23 @@ in `dbus_service.py`), also update:
 
 ### Adding/modifying CLI subcommands
 
-The CLI package (`forgewatch.cli`) uses stdlib only (no extra deps). Key patterns:
+The CLI package (`forgewatch.cli`) uses stdlib only (no extra deps) for most
+subcommands. The `completions` subcommand uses `shtab`. Key patterns:
 
 1. **Shared helpers** are in `_output.py`, `_prompts.py`, `_checks.py`, and
    `_systemd.py`. These are pure-Python modules with no async code.
 2. **Subcommand handlers** are in `setup.py`, `service.py`, and `uninstall.py`.
-   Each exports a single `run_*()` entry point.
+   Each exports a single `run_*()` entry point. The `completions` subcommand
+   is handled inline in `dispatch()` via `shtab.complete()`.
 3. **Parser and dispatch** are in `__init__.py` (`add_subcommands()` + `dispatch()`).
    `build_parser()` and `run_cli()` are also provided for standalone/test use.
    Subcommand modules are imported lazily inside `dispatch()` to avoid loading
    unused code.
-4. **Unified parser** in `__main__.py` builds a single argparse parser with both
-   daemon flags (`-c`, `-v`) and management subcommands. When `args.command` is
-   not `None`, it dispatches to `cli.dispatch(args)`.
+4. **Unified parser** in `__main__.py` (`build_full_parser()`) builds a single
+   argparse parser with both daemon flags (`-c`, `-v`) and management
+   subcommands. It also attaches `shtab.FILE` completion metadata to the
+   `--config` flag. When `args.command` is not `None`, it dispatches to
+   `cli.dispatch(args)`.
 5. **Bundled service files** live in `cli/systemd/` and are read via
    `importlib.resources.files("forgewatch.cli.systemd")`.
 

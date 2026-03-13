@@ -214,6 +214,9 @@ forgewatch service start|stop|restart
 forgewatch service install          # install systemd unit files
 forgewatch service enable|disable   # toggle autostart
 forgewatch uninstall                # remove services + optionally config
+forgewatch completions bash         # generate bash completions
+forgewatch completions zsh          # generate zsh completions
+forgewatch completions tcsh         # generate tcsh completions
 ```
 
 ---
@@ -288,7 +291,7 @@ patterns, CI pipeline details, and project structure.
 
 | Module | Description |
 |---|---|
-| [CLI](docs/modules/cli.md) | Management subcommands (setup, service, uninstall) |
+| [CLI](docs/modules/cli.md) | Management subcommands (setup, service, uninstall, completions) |
 | [Config](docs/modules/config.md) | Configuration loading and validation |
 | [Poller](docs/modules/poller.md) | GitHub API client, pagination, rate limiting |
 | [Store](docs/modules/store.md) | In-memory state store with diff computation |

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Shell completion support -- new `forgewatch completions <shell>` subcommand generates Bash, Zsh, or tcsh completions via `shtab`, with file-path completion for `--config`
 - Pagination cap warning -- the poller now logs a warning when the page limit is reached and more results are available, suggesting the user narrow their repo filter
 - Configurable indicator settings via a new `[indicator]` TOML section -- `reconnect_interval`, `window_width`, and `max_window_height` can now be tuned without code changes
 - Unknown config key warnings -- `load_config()` now logs a warning for any unrecognised top-level key, helping catch typos early

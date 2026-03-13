@@ -32,7 +32,7 @@ forgewatch/              # Main package
 ├── notifier.py          # Desktop notifications
 ├── url_opener.py        # Shared URL opener (XDG portal + xdg-open)
 ├── daemon.py            # Main daemon loop
-├── cli/                 # CLI management subcommands (stdlib only)
+├── cli/                 # CLI management subcommands (stdlib + shtab)
 │   ├── __init__.py      # Subcommand parser + dispatch
 │   ├── setup.py         # Setup wizard (config + systemd)
 │   ├── service.py       # Service management (start/stop/status/...)
