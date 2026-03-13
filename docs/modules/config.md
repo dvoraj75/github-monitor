@@ -20,6 +20,7 @@ Internal constants (prefixed with `_`):
 | `_VALID_LOG_LEVELS` | `frozenset[str]` | `{"debug", "info", "warning", "error"}` | Allowed values for `log_level` |
 | `_VALID_URGENCIES` | `frozenset[str]` | `{"low", "normal", "critical"}` | Allowed values for `notification_urgency` |
 | `_VALID_ICON_THEMES` | `frozenset[str]` | `{"light", "dark"}` | Allowed values for `icon_theme` |
+| `_VALID_GROUPING_MODES` | `frozenset[str]` | `{"flat", "repo"}` | Allowed values for `notifications.grouping` |
 | `_KNOWN_KEYS` | `frozenset[str]` | *(all recognised top-level keys)* | Used by `_warn_unknown_keys()` to detect typos |
 
 ## `ConfigError`
@@ -52,6 +53,41 @@ every problem listed (one per line), so the user can fix everything in one pass.
 - `"notification_urgency must be one of ['critical', 'low', 'normal'], got 'extreme'"`
 - `"icon_theme must be one of ['dark', 'light'], got 'blue'"`
 
+## `RepoNotificationConfig`
+
+```python
+@dataclass(frozen=True)
+class RepoNotificationConfig:
+    enabled: bool = True
+    urgency: str = "normal"
+    threshold: int = 3
+```
+
+Per-repo notification overrides. Each instance corresponds to a
+`[notifications.repos."owner/repo"]` entry in the config file.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | `bool` | `True` | Set to `False` to suppress notifications for this repo |
+| `urgency` | `str` | `"normal"` | Notification urgency: `low`, `normal`, `critical` |
+| `threshold` | `int` | `3` | Individual vs. summary notification cutoff (>= 1) |
+
+## `NotificationConfig`
+
+```python
+@dataclass(frozen=True)
+class NotificationConfig:
+    grouping: str = "flat"
+    repos: dict[str, RepoNotificationConfig] = field(default_factory=dict)
+```
+
+Notification grouping and per-repo settings from the `[notifications]` section.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `grouping` | `str` | `"flat"` | Grouping mode: `flat` (single list) or `repo` (grouped by repository) |
+| `repos` | `dict[str, RepoNotificationConfig]` | `{}` | Per-repo overrides keyed by `owner/name` |
+
 ## `Config`
 
 ```python
@@ -70,6 +106,7 @@ class Config:
     notification_threshold: int = 3
     notification_urgency: str = "normal"
     icon_theme: str = "light"
+    notifications: NotificationConfig = field(default_factory=NotificationConfig)
 ```
 
 An immutable (frozen) dataclass holding validated configuration values.
@@ -89,6 +126,7 @@ An immutable (frozen) dataclass holding validated configuration values.
 | `notification_threshold` | `int` | `3` | Individual vs. summary notification cutoff (>= 1) |
 | `notification_urgency` | `str` | `"normal"` | Notification urgency: `low`, `normal`, `critical` |
 | `icon_theme` | `str` | `"light"` | Icon theme for tray indicator: `light`, `dark` |
+| `notifications` | `NotificationConfig` | `NotificationConfig()` | Notification grouping and per-repo overrides |
 
 The dataclass is frozen, so fields cannot be modified after creation:
 
@@ -329,6 +367,32 @@ one pass.
 11. `notification_threshold` -- must be an `int` >= 1 (via `_collect_int_min`)
 12. `notification_urgency` -- must be one of `_VALID_URGENCIES` (via `_collect_choice`)
 13. `icon_theme` -- must be one of `_VALID_ICON_THEMES` (via `_collect_choice`)
+14. `notifications` -- validated via `_validate_notifications()` (see below)
+
+## `_validate_notifications()` (internal)
+
+```python
+def _validate_notifications(raw: dict[str, object]) -> NotificationConfig:
+```
+
+Validates the `[notifications]` TOML section. Returns `NotificationConfig()`
+with defaults if the section is absent. Checks:
+
+- `notifications` must be a table (if present)
+- `grouping` must be a string in `_VALID_GROUPING_MODES` (case-insensitive)
+- `repos` must be a table (if present); each entry validated by `_validate_repo_notification()`
+
+## `_validate_repo_notification()` (internal)
+
+```python
+def _validate_repo_notification(repo_name: str, repo_raw: dict[str, object]) -> RepoNotificationConfig:
+```
+
+Validates a single `[notifications.repos."owner/repo"]` entry. Checks:
+
+- `enabled` must be a boolean (default: `True`)
+- `urgency` must be a string in `_VALID_URGENCIES` (case-insensitive, default: `"normal"`)
+- `threshold` must be an integer >= 1 (default: `3`)
 
 ## Tests
 
@@ -350,3 +414,7 @@ Tests in `tests/test_config.py` covering:
 - `IndicatorConfig` via `load_indicator_config()` -- defaults, custom values,
   partial values, missing file, invalid TOML, boundary validation for each field,
   wrong types, multiple errors collected, frozen dataclass
+- `NotificationConfig` -- defaults when section missing, grouping modes (flat,
+  repo), invalid grouping, case-insensitive grouping, per-repo full config,
+  disabled repos, invalid urgency/threshold/enabled types, multiple repos,
+  `notifications` not a table

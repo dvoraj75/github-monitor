@@ -383,6 +383,163 @@ def test_poll_interval_at_boundary(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Notification config — [notifications] section
+# ---------------------------------------------------------------------------
+
+
+def test_notifications_defaults_when_missing(minimal_config_file: Path) -> None:
+    """Missing [notifications] section should use defaults."""
+    cfg = load_config(minimal_config_file)
+    assert cfg.notifications.grouping == "flat"
+    assert cfg.notifications.repos == {}
+
+
+def test_notifications_grouping_flat(tmp_path: Path) -> None:
+    p = tmp_path / "config.toml"
+    p.write_text('github_token = "ghp_abc"\ngithub_username = "user"\n[notifications]\ngrouping = "flat"\n')
+    cfg = load_config(p)
+    assert cfg.notifications.grouping == "flat"
+
+
+def test_notifications_grouping_repo(tmp_path: Path) -> None:
+    p = tmp_path / "config.toml"
+    p.write_text('github_token = "ghp_abc"\ngithub_username = "user"\n[notifications]\ngrouping = "repo"\n')
+    cfg = load_config(p)
+    assert cfg.notifications.grouping == "repo"
+
+
+def test_notifications_grouping_invalid(tmp_path: Path) -> None:
+    p = tmp_path / "config.toml"
+    p.write_text('github_token = "ghp_abc"\ngithub_username = "user"\n[notifications]\ngrouping = "custom"\n')
+    with pytest.raises(ConfigError, match=r"notifications\.grouping must be one of"):
+        load_config(p)
+
+
+def test_notifications_grouping_wrong_type(tmp_path: Path) -> None:
+    p = tmp_path / "config.toml"
+    p.write_text('github_token = "ghp_abc"\ngithub_username = "user"\n[notifications]\ngrouping = 42\n')
+    with pytest.raises(ConfigError, match=r"notifications\.grouping must be a string"):
+        load_config(p)
+
+
+def test_notifications_grouping_case_insensitive(tmp_path: Path) -> None:
+    p = tmp_path / "config.toml"
+    p.write_text('github_token = "ghp_abc"\ngithub_username = "user"\n[notifications]\ngrouping = "Repo"\n')
+    cfg = load_config(p)
+    assert cfg.notifications.grouping == "repo"
+
+
+def test_notifications_per_repo_full_config(tmp_path: Path) -> None:
+    """Full per-repo config with all fields."""
+    p = tmp_path / "config.toml"
+    p.write_text(
+        'github_token = "ghp_abc"\ngithub_username = "user"\n'
+        '[notifications]\ngrouping = "repo"\n'
+        '[notifications.repos."owner/repo"]\n'
+        "enabled = true\n"
+        'urgency = "critical"\n'
+        "threshold = 5\n"
+    )
+    cfg = load_config(p)
+    assert cfg.notifications.grouping == "repo"
+    repo_cfg = cfg.notifications.repos["owner/repo"]
+    assert repo_cfg.enabled is True
+    assert repo_cfg.urgency == "critical"
+    assert repo_cfg.threshold == 5
+
+
+def test_notifications_per_repo_disabled(tmp_path: Path) -> None:
+    p = tmp_path / "config.toml"
+    p.write_text(
+        'github_token = "ghp_abc"\ngithub_username = "user"\n[notifications.repos."org/other-repo"]\nenabled = false\n'
+    )
+    cfg = load_config(p)
+    repo_cfg = cfg.notifications.repos["org/other-repo"]
+    assert repo_cfg.enabled is False
+    assert repo_cfg.urgency == "normal"
+    assert repo_cfg.threshold == 3
+
+
+def test_notifications_per_repo_invalid_urgency(tmp_path: Path) -> None:
+    p = tmp_path / "config.toml"
+    p.write_text(
+        'github_token = "ghp_abc"\ngithub_username = "user"\n[notifications.repos."owner/repo"]\nurgency = "urgent"\n'
+    )
+    with pytest.raises(ConfigError, match=r"notifications\.repos\.'owner/repo'\.urgency must be one of"):
+        load_config(p)
+
+
+def test_notifications_per_repo_invalid_threshold(tmp_path: Path) -> None:
+    p = tmp_path / "config.toml"
+    p.write_text(
+        'github_token = "ghp_abc"\ngithub_username = "user"\n[notifications.repos."owner/repo"]\nthreshold = 0\n'
+    )
+    with pytest.raises(ConfigError, match=r"notifications\.repos\.'owner/repo'\.threshold must be >= 1"):
+        load_config(p)
+
+
+def test_notifications_per_repo_threshold_wrong_type(tmp_path: Path) -> None:
+    p = tmp_path / "config.toml"
+    p.write_text(
+        'github_token = "ghp_abc"\ngithub_username = "user"\n[notifications.repos."owner/repo"]\nthreshold = "high"\n'
+    )
+    with pytest.raises(ConfigError, match=r"notifications\.repos\.'owner/repo'\.threshold must be an integer"):
+        load_config(p)
+
+
+def test_notifications_per_repo_enabled_wrong_type(tmp_path: Path) -> None:
+    p = tmp_path / "config.toml"
+    p.write_text(
+        'github_token = "ghp_abc"\ngithub_username = "user"\n[notifications.repos."owner/repo"]\nenabled = "yes"\n'
+    )
+    with pytest.raises(ConfigError, match=r"notifications\.repos\.'owner/repo'\.enabled must be a boolean"):
+        load_config(p)
+
+
+def test_notifications_per_repo_urgency_wrong_type(tmp_path: Path) -> None:
+    p = tmp_path / "config.toml"
+    p.write_text(
+        'github_token = "ghp_abc"\ngithub_username = "user"\n[notifications.repos."owner/repo"]\nurgency = 42\n'
+    )
+    with pytest.raises(ConfigError, match=r"notifications\.repos\.'owner/repo'\.urgency must be a string"):
+        load_config(p)
+
+
+def test_notifications_not_a_table(tmp_path: Path) -> None:
+    p = tmp_path / "config.toml"
+    p.write_text('github_token = "ghp_abc"\ngithub_username = "user"\nnotifications = "invalid"\n')
+    with pytest.raises(ConfigError, match="notifications must be a table"):
+        load_config(p)
+
+
+def test_notifications_multiple_repos(tmp_path: Path) -> None:
+    """Multiple repos can have independent overrides."""
+    p = tmp_path / "config.toml"
+    p.write_text(
+        'github_token = "ghp_abc"\ngithub_username = "user"\n'
+        '[notifications]\ngrouping = "repo"\n'
+        '[notifications.repos."acme/web"]\n'
+        'urgency = "critical"\n'
+        "threshold = 10\n"
+        '[notifications.repos."acme/api"]\n'
+        "enabled = false\n"
+    )
+    cfg = load_config(p)
+    assert cfg.notifications.repos["acme/web"].urgency == "critical"
+    assert cfg.notifications.repos["acme/web"].threshold == 10
+    assert cfg.notifications.repos["acme/api"].enabled is False
+
+
+def test_notifications_urgency_case_insensitive(tmp_path: Path) -> None:
+    p = tmp_path / "config.toml"
+    p.write_text(
+        'github_token = "ghp_abc"\ngithub_username = "user"\n[notifications.repos."owner/repo"]\nurgency = "Critical"\n'
+    )
+    cfg = load_config(p)
+    assert cfg.notifications.repos["owner/repo"].urgency == "critical"
+
+
+# ---------------------------------------------------------------------------
 # Unknown keys warning (Step 3)
 # ---------------------------------------------------------------------------
 

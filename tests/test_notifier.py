@@ -861,3 +861,344 @@ class TestWaitAndOpenValueError:
 
         # Should not raise
         await _wait_and_open(proc, "https://github.com/owner/repo/pull/1")
+
+
+# ---------------------------------------------------------------------------
+# Tests: notify_new_prs — repo grouping mode
+# ---------------------------------------------------------------------------
+
+
+class TestNotifyRepoGrouping:
+    """notify_new_prs with grouping='repo' groups by repository."""
+
+    async def test_repo_grouping_individual_single_repo(self) -> None:
+        """Repo mode with PRs from one repo below threshold -> individual notifications."""
+        prs = [_make_pr(number=i, repo="acme/web") for i in range(1, 3)]
+        proc = _mock_process()
+
+        with (
+            patch("forgewatch.notifier._download_avatar", return_value=None),
+            patch(
+                "forgewatch.notifier.asyncio.create_subprocess_exec",
+                return_value=proc,
+            ) as mock_exec,
+        ):
+            await notify_new_prs(prs, grouping="repo")
+
+            assert mock_exec.call_count == 2
+
+    async def test_repo_grouping_individual_multi_repo(self) -> None:
+        """Repo mode with PRs from multiple repos, all below threshold -> individual per repo."""
+        prs = [
+            _make_pr(number=1, repo="acme/web"),
+            _make_pr(number=2, repo="acme/api"),
+            _make_pr(number=3, repo="acme/web"),
+        ]
+        proc = _mock_process()
+
+        with (
+            patch("forgewatch.notifier._download_avatar", return_value=None),
+            patch(
+                "forgewatch.notifier.asyncio.create_subprocess_exec",
+                return_value=proc,
+            ) as mock_exec,
+        ):
+            await notify_new_prs(prs, grouping="repo")
+
+            # 1 PR in acme/api (individual) + 2 PRs in acme/web (individual) = 3 calls
+            assert mock_exec.call_count == 3
+
+    async def test_repo_grouping_summary_for_large_group(self) -> None:
+        """Repo mode with many PRs from one repo -> repo-level summary."""
+        prs = [_make_pr(number=i, repo="acme/web", title=f"PR {i}") for i in range(1, 6)]
+        proc = _mock_process()
+
+        with patch(
+            "forgewatch.notifier.asyncio.create_subprocess_exec",
+            return_value=proc,
+        ) as mock_exec:
+            await notify_new_prs(prs, grouping="repo")
+
+            # Should be a single summary notification
+            mock_exec.assert_called_once()
+            args = mock_exec.call_args[0]
+            assert "5 new PRs in acme/web" in args
+
+    async def test_repo_grouping_mixed_threshold(self) -> None:
+        """Repo mode: one repo below threshold (individual), another above (summary)."""
+        prs = [
+            _make_pr(number=1, repo="acme/api", title="API fix"),
+            _make_pr(number=2, repo="acme/web", title="Web fix 1"),
+            _make_pr(number=3, repo="acme/web", title="Web fix 2"),
+            _make_pr(number=4, repo="acme/web", title="Web fix 3"),
+            _make_pr(number=5, repo="acme/web", title="Web fix 4"),
+        ]
+        proc = _mock_process()
+
+        with (
+            patch("forgewatch.notifier._download_avatar", return_value=None),
+            patch(
+                "forgewatch.notifier.asyncio.create_subprocess_exec",
+                return_value=proc,
+            ) as mock_exec,
+        ):
+            await notify_new_prs(prs, grouping="repo")
+
+            # acme/api: 1 PR -> individual (1 call)
+            # acme/web: 4 PRs -> summary (1 call)
+            assert mock_exec.call_count == 2
+
+            # Check the summary notification for acme/web
+            all_args = [call[0] for call in mock_exec.call_args_list]
+            summary_args = [a for a in all_args if any("4 new PRs in acme/web" in s for s in a)]
+            assert len(summary_args) == 1
+
+    async def test_repo_grouping_summary_body_contains_pr_info(self) -> None:
+        """Repo summary body should list PR numbers and titles."""
+        prs = [_make_pr(number=i, repo="acme/web", title=f"Fix {i}") for i in range(1, 5)]
+        proc = _mock_process()
+
+        with patch(
+            "forgewatch.notifier.asyncio.create_subprocess_exec",
+            return_value=proc,
+        ) as mock_exec:
+            await notify_new_prs(prs, grouping="repo")
+
+            args = mock_exec.call_args[0]
+            body = args[-1]
+            assert "- #1: Fix 1" in body
+            assert "- #2: Fix 2" in body
+
+
+class TestNotifyFlatGrouping:
+    """notify_new_prs with grouping='flat' preserves existing behaviour."""
+
+    async def test_flat_mode_individual_notifications(self) -> None:
+        prs = [_make_pr(number=i) for i in range(1, 3)]
+        proc = _mock_process()
+
+        with (
+            patch("forgewatch.notifier._download_avatar", return_value=None),
+            patch(
+                "forgewatch.notifier.asyncio.create_subprocess_exec",
+                return_value=proc,
+            ) as mock_exec,
+        ):
+            await notify_new_prs(prs, grouping="flat")
+
+            assert mock_exec.call_count == 2
+
+    async def test_flat_mode_batch_notification(self) -> None:
+        prs = [_make_pr(number=i) for i in range(1, 6)]
+        proc = _mock_process()
+
+        with patch(
+            "forgewatch.notifier.asyncio.create_subprocess_exec",
+            return_value=proc,
+        ) as mock_exec:
+            await notify_new_prs(prs, grouping="flat")
+
+            mock_exec.assert_called_once()
+            args = mock_exec.call_args[0]
+            assert "5 new PR review requests" in args
+
+    async def test_default_grouping_is_flat(self) -> None:
+        """Without specifying grouping, behaviour matches flat mode."""
+        prs = [_make_pr(number=i) for i in range(1, 6)]
+        proc = _mock_process()
+
+        with patch(
+            "forgewatch.notifier.asyncio.create_subprocess_exec",
+            return_value=proc,
+        ) as mock_exec:
+            await notify_new_prs(prs)
+
+            mock_exec.assert_called_once()
+            args = mock_exec.call_args[0]
+            assert "5 new PR review requests" in args
+
+
+# ---------------------------------------------------------------------------
+# Tests: notify_new_prs — per-repo overrides
+# ---------------------------------------------------------------------------
+
+
+class TestNotifyRepoOverrides:
+    """Per-repo notification overrides (enabled, urgency, threshold)."""
+
+    async def test_disabled_repo_skipped_flat_mode(self) -> None:
+        """Disabled repo PRs should not produce notifications in flat mode."""
+        from forgewatch.config import RepoNotificationConfig
+
+        prs = [
+            _make_pr(number=1, repo="acme/web"),
+            _make_pr(number=2, repo="acme/api"),
+        ]
+        overrides = {
+            "acme/web": RepoNotificationConfig(enabled=False),
+        }
+        proc = _mock_process()
+
+        with (
+            patch("forgewatch.notifier._download_avatar", return_value=None),
+            patch(
+                "forgewatch.notifier.asyncio.create_subprocess_exec",
+                return_value=proc,
+            ) as mock_exec,
+        ):
+            await notify_new_prs(prs, grouping="flat", repo_overrides=overrides)
+
+            # Only acme/api PR should trigger a notification
+            mock_exec.assert_called_once()
+            args = mock_exec.call_args[0]
+            assert "acme/api" in " ".join(args)
+
+    async def test_disabled_repo_skipped_repo_mode(self) -> None:
+        """Disabled repo PRs should not produce notifications in repo mode."""
+        from forgewatch.config import RepoNotificationConfig
+
+        prs = [
+            _make_pr(number=1, repo="acme/web"),
+            _make_pr(number=2, repo="acme/api"),
+        ]
+        overrides = {
+            "acme/web": RepoNotificationConfig(enabled=False),
+        }
+        proc = _mock_process()
+
+        with (
+            patch("forgewatch.notifier._download_avatar", return_value=None),
+            patch(
+                "forgewatch.notifier.asyncio.create_subprocess_exec",
+                return_value=proc,
+            ) as mock_exec,
+        ):
+            await notify_new_prs(prs, grouping="repo", repo_overrides=overrides)
+
+            mock_exec.assert_called_once()
+            args = mock_exec.call_args[0]
+            assert "acme/api" in " ".join(args)
+
+    async def test_all_repos_disabled_sends_nothing(self) -> None:
+        """If all repos are disabled, no notifications are sent."""
+        from forgewatch.config import RepoNotificationConfig
+
+        prs = [
+            _make_pr(number=1, repo="acme/web"),
+            _make_pr(number=2, repo="acme/api"),
+        ]
+        overrides = {
+            "acme/web": RepoNotificationConfig(enabled=False),
+            "acme/api": RepoNotificationConfig(enabled=False),
+        }
+
+        with patch(
+            "forgewatch.notifier.asyncio.create_subprocess_exec",
+        ) as mock_exec:
+            await notify_new_prs(prs, grouping="flat", repo_overrides=overrides)
+            mock_exec.assert_not_called()
+
+    async def test_per_repo_urgency_in_flat_mode(self) -> None:
+        """Per-repo urgency override should be used for individual notifications."""
+        from forgewatch.config import RepoNotificationConfig
+
+        pr = _make_pr(number=1, repo="acme/web")
+        overrides = {
+            "acme/web": RepoNotificationConfig(urgency="critical"),
+        }
+        proc = _mock_process()
+
+        with (
+            patch("forgewatch.notifier._download_avatar", return_value=None),
+            patch(
+                "forgewatch.notifier.asyncio.create_subprocess_exec",
+                return_value=proc,
+            ) as mock_exec,
+        ):
+            await notify_new_prs([pr], grouping="flat", urgency="low", repo_overrides=overrides)
+
+            args = mock_exec.call_args[0]
+            assert "--urgency=critical" in args
+
+    async def test_per_repo_urgency_in_repo_mode(self) -> None:
+        """Per-repo urgency override in repo grouping mode."""
+        from forgewatch.config import RepoNotificationConfig
+
+        pr = _make_pr(number=1, repo="acme/web")
+        overrides = {
+            "acme/web": RepoNotificationConfig(urgency="critical"),
+        }
+        proc = _mock_process()
+
+        with (
+            patch("forgewatch.notifier._download_avatar", return_value=None),
+            patch(
+                "forgewatch.notifier.asyncio.create_subprocess_exec",
+                return_value=proc,
+            ) as mock_exec,
+        ):
+            await notify_new_prs([pr], grouping="repo", urgency="low", repo_overrides=overrides)
+
+            args = mock_exec.call_args[0]
+            assert "--urgency=critical" in args
+
+    async def test_per_repo_threshold_in_repo_mode(self) -> None:
+        """Per-repo threshold override — repo with threshold=1 should summarise 2 PRs."""
+        from forgewatch.config import RepoNotificationConfig
+
+        prs = [
+            _make_pr(number=1, repo="acme/web"),
+            _make_pr(number=2, repo="acme/web"),
+        ]
+        overrides = {
+            "acme/web": RepoNotificationConfig(threshold=1),
+        }
+        proc = _mock_process()
+
+        with patch(
+            "forgewatch.notifier.asyncio.create_subprocess_exec",
+            return_value=proc,
+        ) as mock_exec:
+            await notify_new_prs(prs, grouping="repo", repo_overrides=overrides)
+
+            mock_exec.assert_called_once()
+            args = mock_exec.call_args[0]
+            assert "2 new PRs in acme/web" in args
+
+    async def test_repos_without_overrides_use_global_defaults(self) -> None:
+        """Repos not in overrides should use global urgency/threshold."""
+        from forgewatch.config import RepoNotificationConfig
+
+        pr = _make_pr(number=1, repo="acme/other")
+        overrides = {
+            "acme/web": RepoNotificationConfig(urgency="critical"),
+        }
+        proc = _mock_process()
+
+        with (
+            patch("forgewatch.notifier._download_avatar", return_value=None),
+            patch(
+                "forgewatch.notifier.asyncio.create_subprocess_exec",
+                return_value=proc,
+            ) as mock_exec,
+        ):
+            await notify_new_prs([pr], grouping="repo", urgency="normal", repo_overrides=overrides)
+
+            args = mock_exec.call_args[0]
+            assert "--urgency=normal" in args
+
+    async def test_none_overrides_behaves_like_no_overrides(self) -> None:
+        """repo_overrides=None should behave identically to no overrides."""
+        prs = [_make_pr(number=1)]
+        proc = _mock_process()
+
+        with (
+            patch("forgewatch.notifier._download_avatar", return_value=None),
+            patch(
+                "forgewatch.notifier.asyncio.create_subprocess_exec",
+                return_value=proc,
+            ) as mock_exec,
+        ):
+            await notify_new_prs(prs, repo_overrides=None)
+
+            mock_exec.assert_called_once()

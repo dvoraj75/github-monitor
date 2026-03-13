@@ -18,6 +18,7 @@ _MIN_POLL_INTERVAL = 30
 _VALID_LOG_LEVELS = frozenset({"debug", "info", "warning", "error"})
 _VALID_URGENCIES = frozenset({"low", "normal", "critical"})
 _VALID_ICON_THEMES = frozenset({"light", "dark"})
+_VALID_GROUPING_MODES = frozenset({"flat", "repo"})
 
 _KNOWN_KEYS = frozenset(
     {
@@ -47,6 +48,23 @@ class ConfigError(Exception):
 
 
 @dataclass(frozen=True)
+class RepoNotificationConfig:
+    """Per-repo notification overrides."""
+
+    enabled: bool = True
+    urgency: str = "normal"
+    threshold: int = 3
+
+
+@dataclass(frozen=True)
+class NotificationConfig:
+    """Notification grouping and per-repo settings."""
+
+    grouping: str = "flat"
+    repos: dict[str, RepoNotificationConfig] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class Config:
     """Validated configuration for forgewatch."""
 
@@ -63,6 +81,7 @@ class Config:
     notification_threshold: int = 3
     notification_urgency: str = "normal"
     icon_theme: str = "light"
+    notifications: NotificationConfig = field(default_factory=NotificationConfig)
 
 
 @dataclass(frozen=True)
@@ -368,6 +387,67 @@ def _validate_repos(raw: dict[str, object]) -> list[str]:
     return repos
 
 
+def _validate_repo_notification(repo_name: str, repo_raw: dict[str, object]) -> RepoNotificationConfig:
+    """Validate a single ``[notifications.repos."owner/repo"]`` entry."""
+    enabled = repo_raw.get("enabled", True)
+    if not isinstance(enabled, bool):
+        msg = f"notifications.repos.{repo_name!r}.enabled must be a boolean, got {type(enabled).__name__}"
+        raise ConfigError(msg)
+
+    urgency = repo_raw.get("urgency", "normal")
+    if not isinstance(urgency, str):
+        msg = f"notifications.repos.{repo_name!r}.urgency must be a string, got {type(urgency).__name__}"
+        raise ConfigError(msg)
+    urgency = urgency.lower()
+    if urgency not in _VALID_URGENCIES:
+        msg = f"notifications.repos.{repo_name!r}.urgency must be one of {sorted(_VALID_URGENCIES)}, got {urgency!r}"
+        raise ConfigError(msg)
+
+    threshold = repo_raw.get("threshold", 3)
+    if not isinstance(threshold, int):
+        msg = f"notifications.repos.{repo_name!r}.threshold must be an integer, got {type(threshold).__name__}"
+        raise ConfigError(msg)
+    if threshold < 1:
+        msg = f"notifications.repos.{repo_name!r}.threshold must be >= 1, got {threshold}"
+        raise ConfigError(msg)
+
+    return RepoNotificationConfig(enabled=enabled, urgency=urgency, threshold=threshold)
+
+
+def _validate_notifications(raw: dict[str, object]) -> NotificationConfig:
+    """Validate the ``[notifications]`` section and return a NotificationConfig."""
+    section = raw.get("notifications")
+    if section is None:
+        return NotificationConfig()
+
+    if not isinstance(section, dict):
+        msg = "notifications must be a table"
+        raise ConfigError(msg)
+
+    raw_grouping = section.get("grouping", "flat")
+    if not isinstance(raw_grouping, str):
+        msg = f"notifications.grouping must be a string, got {type(raw_grouping).__name__}"
+        raise ConfigError(msg)
+    grouping = raw_grouping.lower()
+    if grouping not in _VALID_GROUPING_MODES:
+        msg = f"notifications.grouping must be one of {sorted(_VALID_GROUPING_MODES)}, got {grouping!r}"
+        raise ConfigError(msg)
+
+    repos_raw = section.get("repos", {})
+    if not isinstance(repos_raw, dict):
+        msg = "notifications.repos must be a table"
+        raise ConfigError(msg)
+
+    repo_configs: dict[str, RepoNotificationConfig] = {}
+    for repo_name, repo_raw in repos_raw.items():
+        if not isinstance(repo_raw, dict):
+            msg = f"notifications.repos.{repo_name!r} must be a table"
+            raise ConfigError(msg)
+        repo_configs[repo_name] = _validate_repo_notification(repo_name, repo_raw)
+
+    return NotificationConfig(grouping=grouping, repos=repo_configs)
+
+
 # ---------------------------------------------------------------------------
 # Main validation
 # ---------------------------------------------------------------------------
@@ -435,4 +515,5 @@ def _validate(raw: dict[str, object]) -> Config:
         notification_threshold=notification_threshold,
         notification_urgency=notification_urgency,
         icon_theme=icon_theme,
+        notifications=_validate_notifications(raw),
     )

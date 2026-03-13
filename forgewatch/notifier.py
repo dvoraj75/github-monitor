@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import itertools
 import logging
 import os
 from pathlib import Path
@@ -23,6 +24,8 @@ from .url_opener import open_url
 
 if TYPE_CHECKING:
     from .poller import PullRequest
+
+from .config import RepoNotificationConfig
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +51,9 @@ _avatar_cache: dict[str, Path] = {}
 # the PR in a browser.  The task reference is stored here so it is not
 # garbage-collected before completion.
 _background_tasks: set[asyncio.Task[None]] = set()
+
+# Default repo override — used when a repo has no explicit config.
+_DEFAULT_REPO_OVERRIDE = RepoNotificationConfig()
 
 
 async def _download_avatar(avatar_url: str, session: aiohttp.ClientSession) -> str | None:
@@ -113,6 +119,8 @@ async def notify_new_prs(
     *,
     threshold: int = _INDIVIDUAL_THRESHOLD,
     urgency: str = "normal",
+    grouping: str = "flat",
+    repo_overrides: dict[str, RepoNotificationConfig] | None = None,
 ) -> None:
     """Send desktop notifications for newly discovered PRs.
 
@@ -122,28 +130,124 @@ async def notify_new_prs(
 
     If there are more than *threshold*, a single summary notification is
     sent listing up to the first 5 PRs to avoid desktop spam.
+
+    When *grouping* is ``"repo"``, PRs are grouped by repository and
+    each group is handled independently (its own threshold / summary).
+
+    *repo_overrides* allows per-repo settings: disable notifications
+    for specific repos, or override urgency / threshold.
     """
     if not new_prs:
         return
 
-    if len(new_prs) <= threshold:
+    if grouping == "repo":
+        await _notify_grouped_by_repo(new_prs, threshold=threshold, urgency=urgency, repo_overrides=repo_overrides)
+    else:
+        await _notify_flat(new_prs, threshold=threshold, urgency=urgency, repo_overrides=repo_overrides)
+
+
+async def _notify_flat(
+    new_prs: list[PullRequest],
+    *,
+    threshold: int,
+    urgency: str,
+    repo_overrides: dict[str, RepoNotificationConfig] | None,
+) -> None:
+    """Send notifications in flat mode (original behaviour)."""
+    filtered = _filter_disabled_repos(new_prs, repo_overrides)
+    if not filtered:
+        return
+
+    if len(filtered) <= threshold:
         async with aiohttp.ClientSession() as session:
-            for pr in new_prs:
+            for pr in filtered:
+                pr_urgency = _get_repo_urgency(pr.repo_full_name, urgency, repo_overrides)
                 icon = await _download_avatar(pr.author_avatar_url, session)
                 await _send_notification(
                     summary=f"PR Review: {pr.repo_full_name}",
                     body=f"#{pr.number} {pr.title}\nby {pr.author}",
                     url=pr.url,
                     icon=icon,
-                    urgency=urgency,
+                    urgency=pr_urgency,
                 )
     else:
-        body = "\n".join(f"- {pr.repo_full_name}#{pr.number}: {pr.title}" for pr in new_prs[:_BATCH_BODY_LIMIT])
+        body = "\n".join(f"- {pr.repo_full_name}#{pr.number}: {pr.title}" for pr in filtered[:_BATCH_BODY_LIMIT])
         await _send_notification(
-            summary=f"{len(new_prs)} new PR review requests",
+            summary=f"{len(filtered)} new PR review requests",
             body=body,
             urgency=urgency,
         )
+
+
+async def _notify_grouped_by_repo(
+    new_prs: list[PullRequest],
+    *,
+    threshold: int,
+    urgency: str,
+    repo_overrides: dict[str, RepoNotificationConfig] | None,
+) -> None:
+    """Send notifications grouped by repository."""
+    filtered = _filter_disabled_repos(new_prs, repo_overrides)
+    if not filtered:
+        return
+
+    sorted_prs = sorted(filtered, key=lambda pr: pr.repo_full_name)
+
+    async with aiohttp.ClientSession() as session:
+        for repo_name, group in itertools.groupby(sorted_prs, key=lambda pr: pr.repo_full_name):
+            repo_prs = list(group)
+            repo_threshold = _get_repo_threshold(repo_name, threshold, repo_overrides)
+            repo_urgency = _get_repo_urgency(repo_name, urgency, repo_overrides)
+
+            if len(repo_prs) <= repo_threshold:
+                for pr in repo_prs:
+                    icon = await _download_avatar(pr.author_avatar_url, session)
+                    await _send_notification(
+                        summary=f"PR Review: {pr.repo_full_name}",
+                        body=f"#{pr.number} {pr.title}\nby {pr.author}",
+                        url=pr.url,
+                        icon=icon,
+                        urgency=repo_urgency,
+                    )
+            else:
+                body = "\n".join(f"- #{pr.number}: {pr.title}" for pr in repo_prs[:_BATCH_BODY_LIMIT])
+                await _send_notification(
+                    summary=f"{len(repo_prs)} new PRs in {repo_name}",
+                    body=body,
+                    urgency=repo_urgency,
+                )
+
+
+def _filter_disabled_repos(
+    prs: list[PullRequest],
+    repo_overrides: dict[str, RepoNotificationConfig] | None,
+) -> list[PullRequest]:
+    """Remove PRs from repos that have notifications disabled."""
+    if not repo_overrides:
+        return prs
+    return [pr for pr in prs if repo_overrides.get(pr.repo_full_name, _DEFAULT_REPO_OVERRIDE).enabled]
+
+
+def _get_repo_urgency(
+    repo_name: str,
+    default_urgency: str,
+    repo_overrides: dict[str, RepoNotificationConfig] | None,
+) -> str:
+    """Return the urgency for a repo, falling back to the global default."""
+    if not repo_overrides or repo_name not in repo_overrides:
+        return default_urgency
+    return repo_overrides[repo_name].urgency
+
+
+def _get_repo_threshold(
+    repo_name: str,
+    default_threshold: int,
+    repo_overrides: dict[str, RepoNotificationConfig] | None,
+) -> int:
+    """Return the threshold for a repo, falling back to the global default."""
+    if not repo_overrides or repo_name not in repo_overrides:
+        return default_threshold
+    return repo_overrides[repo_name].threshold
 
 
 async def _send_notification(

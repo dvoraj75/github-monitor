@@ -84,6 +84,10 @@ Single poll cycle:
   `threshold` parameter (individual vs. summary notification cutoff)
 - `config.notification_urgency` -- passed to `notify_new_prs()` as the
   `urgency` parameter
+- `config.notifications.grouping` -- passed to `notify_new_prs()` as the
+  `grouping` parameter (`"flat"` or `"repo"`)
+- `config.notifications.repos` -- passed to `notify_new_prs()` as the
+  `repo_overrides` parameter (`None` if the dict is empty)
 
 **First-poll notification suppression:** On the very first poll cycle, all PRs
 appear as "new" because the store starts empty. By default
@@ -135,7 +139,7 @@ Daemon._poll_once()
     ├── store.update(prs)       ──► StateDiff
     │
     ├── if new PRs AND notifications_enabled AND (not first_poll OR notify_on_first_poll):
-    │   └── notify_new_prs(threshold=..., urgency=...)  ──► notify-send
+    │   └── notify_new_prs(threshold=..., urgency=..., grouping=..., repo_overrides=...)  ──► notify-send
     │
     └── if any changes AND dbus connected:
         └── interface.PullRequestsChanged()  ──► D-Bus signal

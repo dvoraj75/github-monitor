@@ -21,6 +21,7 @@ Module-level state:
 |---|---|---|
 | `_avatar_cache` | `dict[str, Path]` | In-memory cache mapping avatar URLs to local file paths |
 | `_background_tasks` | `set[asyncio.Task]` | Tracks background tasks (notification click handlers) to prevent GC |
+| `_DEFAULT_REPO_OVERRIDE` | `RepoNotificationConfig` | Default repo override instance (all defaults) used when a repo has no explicit config |
 
 ## Functions
 
@@ -32,6 +33,8 @@ async def notify_new_prs(
     *,
     threshold: int = _INDIVIDUAL_THRESHOLD,
     urgency: str = "normal",
+    grouping: str = "flat",
+    repo_overrides: dict[str, RepoNotificationConfig] | None = None,
 ) -> None:
 ```
 
@@ -45,19 +48,32 @@ entry point -- call it after each poll cycle with the `StateDiff.new_prs` list.
 | `new_prs` | `list[PullRequest]` | (required) | PRs not seen in the previous poll cycle |
 | `threshold` | `int` | `3` | Max PRs for individual notifications; above this, a summary is sent |
 | `urgency` | `str` | `"normal"` | Notification urgency level: `low`, `normal`, or `critical` |
+| `grouping` | `str` | `"flat"` | Grouping mode: `"flat"` (single list) or `"repo"` (grouped by repository) |
+| `repo_overrides` | `dict[str, RepoNotificationConfig] \| None` | `None` | Per-repo settings: disable notifications, override urgency or threshold |
 
 **Behaviour:**
 
 - If `new_prs` is empty, returns immediately (no subprocess calls).
-- If 1-`threshold` new PRs: opens a shared `aiohttp.ClientSession` and sends
-  one notification per PR with:
-  - Summary: `"PR Review: {repo_full_name}"`
-  - Body: `"#{number} {title}\nby {author}"`
-  - Icon: author's avatar (downloaded and cached locally)
-  - Action: clickable "Open" button that opens the PR in the default browser
-- If > `threshold` new PRs: sends a single batch notification with:
-  - Summary: `"{count} new PR review requests"`
-  - Body: first 5 PRs as `"- {repo}#{number}: {title}"`, one per line
+- PRs from repos with `enabled = false` in `repo_overrides` are filtered out
+  before any notifications are sent.
+- **Flat mode** (`grouping="flat"`, the default):
+  - If 1-`threshold` new PRs: opens a shared `aiohttp.ClientSession` and sends
+    one notification per PR with per-repo urgency override (if configured):
+    - Summary: `"PR Review: {repo_full_name}"`
+    - Body: `"#{number} {title}\nby {author}"`
+    - Icon: author's avatar (downloaded and cached locally)
+    - Action: clickable "Open" button that opens the PR in the default browser
+  - If > `threshold` new PRs: sends a single batch notification with:
+    - Summary: `"{count} new PR review requests"`
+    - Body: first 5 PRs as `"- {repo}#{number}: {title}"`, one per line
+- **Repo mode** (`grouping="repo"`):
+  - PRs are sorted and grouped by `repo_full_name`.
+  - Each repo group is handled independently using that repo's threshold
+    (from `repo_overrides`, falling back to the global `threshold`).
+  - Groups at or below the repo threshold get individual notifications.
+  - Groups above the repo threshold get a single repo-level summary:
+    - Summary: `"{count} new PRs in {repo_name}"`
+    - Body: first 5 PRs as `"- #{number}: {title}"`, one per line
 
 ### `_send_notification()`
 
@@ -147,10 +163,81 @@ Desktop Portal first, then falls back to `xdg-open`).
 
 See [url_opener.md](url_opener.md) for details on the URL opening mechanism.
 
+### `_notify_flat()` (internal)
+
+```python
+async def _notify_flat(
+    new_prs: list[PullRequest],
+    *,
+    threshold: int,
+    urgency: str,
+    repo_overrides: dict[str, RepoNotificationConfig] | None,
+) -> None:
+```
+
+Sends notifications in flat mode (original behaviour). Filters disabled repos,
+then applies the global threshold to decide between individual and summary
+notifications. Per-repo urgency overrides are applied to individual notifications.
+
+### `_notify_grouped_by_repo()` (internal)
+
+```python
+async def _notify_grouped_by_repo(
+    new_prs: list[PullRequest],
+    *,
+    threshold: int,
+    urgency: str,
+    repo_overrides: dict[str, RepoNotificationConfig] | None,
+) -> None:
+```
+
+Sends notifications grouped by repository. Filters disabled repos, sorts PRs by
+`repo_full_name`, and processes each repo group independently using per-repo
+threshold and urgency settings.
+
+### `_filter_disabled_repos()` (internal)
+
+```python
+def _filter_disabled_repos(
+    prs: list[PullRequest],
+    repo_overrides: dict[str, RepoNotificationConfig] | None,
+) -> list[PullRequest]:
+```
+
+Removes PRs from repos that have `enabled = False` in `repo_overrides`. Returns
+all PRs unchanged if `repo_overrides` is `None` or empty.
+
+### `_get_repo_urgency()` (internal)
+
+```python
+def _get_repo_urgency(
+    repo_name: str,
+    default_urgency: str,
+    repo_overrides: dict[str, RepoNotificationConfig] | None,
+) -> str:
+```
+
+Returns the urgency for a given repo, falling back to the global default if the
+repo has no override.
+
+### `_get_repo_threshold()` (internal)
+
+```python
+def _get_repo_threshold(
+    repo_name: str,
+    default_threshold: int,
+    repo_overrides: dict[str, RepoNotificationConfig] | None,
+) -> int:
+```
+
+Returns the threshold for a given repo, falling back to the global default if
+the repo has no override.
+
 ## Usage example
 
 ```python
 from forgewatch.notifier import notify_new_prs
+from forgewatch.config import RepoNotificationConfig
 from forgewatch.store import PRStore
 
 store = PRStore()
@@ -162,6 +249,16 @@ if diff.new_prs:
 
 # With custom threshold and urgency:
 await notify_new_prs(diff.new_prs, threshold=5, urgency="critical")
+
+# With repo grouping:
+await notify_new_prs(diff.new_prs, grouping="repo")
+
+# With per-repo overrides:
+overrides = {
+    "acme/web": RepoNotificationConfig(urgency="critical", threshold=5),
+    "acme/noisy": RepoNotificationConfig(enabled=False),
+}
+await notify_new_prs(diff.new_prs, grouping="repo", repo_overrides=overrides)
 ```
 
 ## Design notes
@@ -183,6 +280,11 @@ await notify_new_prs(diff.new_prs, threshold=5, urgency="critical")
 - The individual vs. batch threshold prevents desktop notification floods when
   many PRs appear at once (e.g., first poll after starting the daemon). The
   threshold is configurable via the `threshold` parameter
+- Repo grouping mode (`grouping="repo"`) uses `itertools.groupby` after sorting
+  by `repo_full_name`, so each repo's PRs are handled independently with their
+  own threshold/urgency settings
+- Per-repo overrides allow disabling notifications for noisy repos, setting
+  repo-specific urgency levels, or adjusting the summary threshold per repo
 - Background tasks are stored in `_background_tasks` to prevent garbage
   collection before completion
 - All errors are caught and logged -- the notifier never raises exceptions

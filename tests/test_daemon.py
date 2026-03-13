@@ -151,6 +151,8 @@ class TestPollOnce:
                 prs,
                 threshold=3,
                 urgency="normal",
+                grouping="flat",
+                repo_overrides=None,
             )
 
     async def test_suppresses_notifications_on_first_poll(self) -> None:
@@ -848,6 +850,8 @@ class TestNotificationConfigPassthrough:
                 prs,
                 threshold=10,
                 urgency="critical",
+                grouping="flat",
+                repo_overrides=None,
             )
 
 
@@ -960,3 +964,74 @@ class TestClientConfigPassthrough:
 
         assert daemon.client._base_url == "https://gh.new.example.com"
         assert daemon.client._max_retries == 7
+
+
+# ---------------------------------------------------------------------------
+# Tests: notification grouping passthrough
+# ---------------------------------------------------------------------------
+
+
+class TestNotificationGroupingPassthrough:
+    """Daemon passes notification grouping and repo overrides to notify_new_prs."""
+
+    async def test_repo_grouping_mode_passed(self) -> None:
+        from forgewatch.config import NotificationConfig
+
+        config = _make_config(notifications=NotificationConfig(grouping="repo"))
+        daemon = Daemon(config)
+        prs = [_make_pr(1)]
+        daemon.client.fetch_all = AsyncMock(return_value=prs)  # type: ignore[method-assign]
+        daemon.interface = MagicMock()
+        daemon._first_poll = False
+
+        with patch("forgewatch.daemon.notify_new_prs", new_callable=AsyncMock) as mock_notify:
+            await daemon._poll_once()
+            mock_notify.assert_awaited_once_with(
+                prs,
+                threshold=3,
+                urgency="normal",
+                grouping="repo",
+                repo_overrides=None,
+            )
+
+    async def test_repo_overrides_passed(self) -> None:
+        from forgewatch.config import NotificationConfig, RepoNotificationConfig
+
+        overrides = {"acme/web": RepoNotificationConfig(urgency="critical", threshold=5)}
+        config = _make_config(notifications=NotificationConfig(grouping="repo", repos=overrides))
+        daemon = Daemon(config)
+        prs = [_make_pr(1)]
+        daemon.client.fetch_all = AsyncMock(return_value=prs)  # type: ignore[method-assign]
+        daemon.interface = MagicMock()
+        daemon._first_poll = False
+
+        with patch("forgewatch.daemon.notify_new_prs", new_callable=AsyncMock) as mock_notify:
+            await daemon._poll_once()
+            mock_notify.assert_awaited_once_with(
+                prs,
+                threshold=3,
+                urgency="normal",
+                grouping="repo",
+                repo_overrides=overrides,
+            )
+
+    async def test_empty_repo_overrides_passes_none(self) -> None:
+        """When repos dict is empty, repo_overrides should be None."""
+        from forgewatch.config import NotificationConfig
+
+        config = _make_config(notifications=NotificationConfig(grouping="flat", repos={}))
+        daemon = Daemon(config)
+        prs = [_make_pr(1)]
+        daemon.client.fetch_all = AsyncMock(return_value=prs)  # type: ignore[method-assign]
+        daemon.interface = MagicMock()
+        daemon._first_poll = False
+
+        with patch("forgewatch.daemon.notify_new_prs", new_callable=AsyncMock) as mock_notify:
+            await daemon._poll_once()
+            mock_notify.assert_awaited_once_with(
+                prs,
+                threshold=3,
+                urgency="normal",
+                grouping="flat",
+                repo_overrides=None,
+            )
