@@ -118,11 +118,19 @@ def _create_app(
     mock_window_cls: MagicMock,
     *,
     icon_theme: str = "light",
+    reconnect_interval: int = 10,
+    window_width: int = 400,
+    max_window_height: int = 500,
 ) -> tuple[Any, MagicMock, MagicMock, MagicMock]:
     """Import and create IndicatorApp with all GTK components mocked."""
     from forgewatch.indicator.app import IndicatorApp
 
-    app = IndicatorApp(icon_theme=icon_theme)
+    app = IndicatorApp(
+        icon_theme=icon_theme,
+        reconnect_interval=reconnect_interval,
+        window_width=window_width,
+        max_window_height=max_window_height,
+    )
     # Return convenience references to the mock instances.
     client = mock_client_cls.return_value
     tray = mock_tray_cls.return_value
@@ -174,6 +182,21 @@ class TestConstruction:
         assert "on_pr_clicked" in kwargs.kwargs
         assert "on_refresh" in kwargs.kwargs
         assert "on_visibility_changed" in kwargs.kwargs
+
+    def test_passes_reconnect_interval_to_client(
+        self, mock_client_cls: MagicMock, mock_tray_cls: MagicMock, mock_window_cls: MagicMock
+    ) -> None:
+        _create_app(mock_client_cls, mock_tray_cls, mock_window_cls, reconnect_interval=42)
+        kwargs = mock_client_cls.call_args
+        assert kwargs.kwargs["reconnect_interval"] == 42
+
+    def test_passes_window_dimensions_to_window(
+        self, mock_client_cls: MagicMock, mock_tray_cls: MagicMock, mock_window_cls: MagicMock
+    ) -> None:
+        _create_app(mock_client_cls, mock_tray_cls, mock_window_cls, window_width=600, max_window_height=800)
+        kwargs = mock_window_cls.call_args
+        assert kwargs.kwargs["window_width"] == 600
+        assert kwargs.kwargs["max_window_height"] == 800
 
 
 # ---------------------------------------------------------------------------

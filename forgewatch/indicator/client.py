@@ -91,9 +91,12 @@ class DaemonClient:
         self,
         on_prs_changed: Callable[[list[PRInfo]], None],
         on_connection_changed: Callable[[bool], None],
+        *,
+        reconnect_interval: int = _RECONNECT_INTERVAL_S,
     ) -> None:
         self._on_prs_changed = on_prs_changed
         self._on_connection_changed = on_connection_changed
+        self._reconnect_interval = reconnect_interval
 
         self._bus: MessageBus | None = None
         self._interface: ProxyInterface | None = None
@@ -257,8 +260,8 @@ class DaemonClient:
             self._reconnect_handle = None
             asyncio.ensure_future(self.connect())  # noqa: RUF006
 
-        self._reconnect_handle = loop.call_later(_RECONNECT_INTERVAL_S, _fire)
-        logger.debug("Reconnect scheduled in %ds", _RECONNECT_INTERVAL_S)
+        self._reconnect_handle = loop.call_later(self._reconnect_interval, _fire)
+        logger.debug("Reconnect scheduled in %ds", self._reconnect_interval)
 
     def _cancel_reconnect(self) -> None:
         """Cancel a pending reconnection attempt, if any."""

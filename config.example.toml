@@ -48,3 +48,12 @@ repos = []
 # Use "light" for light desktop panels (dark icons on light background).
 # Use "dark" for dark desktop panels (light icons on dark background).
 # icon_theme = "light"
+
+# ---------------------------------------------------------------------------
+# Indicator settings (system tray process)
+# ---------------------------------------------------------------------------
+
+# [indicator]
+# reconnect_interval = 10   # Seconds between reconnect attempts (default: 10)
+# window_width = 400         # Popup window width in pixels (default: 400)
+# max_window_height = 500    # Maximum popup window height in pixels (default: 500)

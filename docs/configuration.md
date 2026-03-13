@@ -38,6 +38,17 @@ If no config file is found at the resolved path, a `ConfigError` is raised.
 | `notification_urgency` | string | No | `"normal"` | Notification urgency: `"low"`, `"normal"`, or `"critical"` |
 | `icon_theme` | string | No | `"light"` | Icon theme for the system tray indicator: `"light"` (dark icons for light panels) or `"dark"` (light icons for dark panels) |
 
+### `[indicator]` section
+
+Settings for the system tray indicator process. These are read by the
+indicator via `load_indicator_config()` and have no effect on the daemon.
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `reconnect_interval` | integer | No | `10` | Seconds between D-Bus reconnect attempts (minimum: 1) |
+| `window_width` | integer | No | `400` | Popup window width in pixels (minimum: 200) |
+| `max_window_height` | integer | No | `500` | Maximum popup window height in pixels (minimum: 200) |
+
 ## GitHub token setup
 
 ForgeWatch needs a GitHub personal access token (PAT) to query the
@@ -128,8 +139,12 @@ config file without a token and supply it via the environment instead.
 
 ## Validation rules
 
-All validation happens at config load time. If any rule fails, a `ConfigError`
-is raised with a descriptive message.
+All validation happens at config load time. Validation collects **all** errors
+and raises a single `ConfigError` listing every problem, so you can fix
+everything in one pass. Error messages include actionable hints where possible
+(e.g. example token prefix, recommended poll interval).
+
+Unrecognised top-level keys produce a log warning (possible typo detection).
 
 - `github_token` -- must be a non-empty string
 - `github_username` -- must be a non-empty string
@@ -145,6 +160,12 @@ is raised with a descriptive message.
 - `notification_threshold` -- must be an integer >= 1
 - `notification_urgency` -- must be one of `low`, `normal`, `critical` (case-insensitive)
 - `icon_theme` -- must be one of `light`, `dark` (case-insensitive)
+
+**`[indicator]` section:**
+
+- `reconnect_interval` -- must be an integer >= 1
+- `window_width` -- must be an integer >= 200
+- `max_window_height` -- must be an integer >= 200
 
 ## Example config
 
@@ -174,6 +195,11 @@ max_retries             = 5
 notification_threshold  = 5
 notification_urgency    = "low"
 icon_theme              = "light"
+
+[indicator]
+reconnect_interval = 10
+window_width       = 400
+max_window_height  = 500
 ```
 
 Using environment variables instead of a token in the file:
@@ -237,6 +263,15 @@ repos = []
 # Use "light" for light desktop panels (dark icons on light background).
 # Use "dark" for dark desktop panels (light icons on dark background).
 # icon_theme = "light"
+
+# ---------------------------------------------------------------------------
+# Indicator settings (system tray process)
+# ---------------------------------------------------------------------------
+
+# [indicator]
+# reconnect_interval = 10   # Seconds between reconnect attempts (default: 10)
+# window_width = 400         # Popup window width in pixels (default: 400)
+# max_window_height = 500    # Maximum popup window height in pixels (default: 500)
 ```
 
 ## Runtime changes via SIGHUP
@@ -258,7 +293,7 @@ immediately.
 
 ```python
 from pathlib import Path
-from forgewatch.config import load_config
+from forgewatch.config import load_config, load_indicator_config
 
 # Load from default path
 cfg = load_config()
@@ -282,4 +317,10 @@ print(cfg.max_retries)               # 3
 print(cfg.notification_threshold)    # 3
 print(cfg.notification_urgency)      # "normal"
 print(cfg.icon_theme)                # "light"
+
+# Load indicator-specific config ([indicator] section)
+ind = load_indicator_config()
+print(ind.reconnect_interval)        # 10
+print(ind.window_width)              # 400
+print(ind.max_window_height)         # 500
 ```

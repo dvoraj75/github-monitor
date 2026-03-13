@@ -360,6 +360,24 @@ class TestPRWindowConstruction:
 
         assert win._on_visibility_changed is None
 
+    def test_default_dimensions(self) -> None:
+        """Default window dimensions match module constants."""
+        win = PRWindow(MagicMock(), MagicMock())
+
+        assert win._window_width == 400
+        assert win._max_window_height == 500
+
+    def test_custom_dimensions(self) -> None:
+        """Custom dimensions are stored and used."""
+        win = PRWindow(MagicMock(), MagicMock(), window_width=600, max_window_height=800)
+
+        assert win._window_width == 600
+        assert win._max_window_height == 800
+        # Verify set_default_size was called with custom width
+        win._window.set_default_size.assert_called_with(600, -1)
+        # Verify set_max_content_height was called with custom height - 100
+        win._scrolled.set_max_content_height.assert_called_with(700)
+
 
 # ---------------------------------------------------------------------------
 # PRWindow — update_prs

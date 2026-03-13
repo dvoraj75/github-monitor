@@ -714,6 +714,22 @@ class TestReconnection:
         client._cancel_reconnect()
 
     @patch("forgewatch.indicator.client.MessageBus")
+    async def test_custom_reconnect_interval(self, mock_bus_class: MagicMock) -> None:
+        """Custom reconnect_interval is stored and used by _schedule_reconnect."""
+        mock_bus_class.return_value.connect = AsyncMock(side_effect=OSError("no bus"))
+
+        client = DaemonClient(
+            on_prs_changed=MagicMock(),
+            on_connection_changed=MagicMock(),
+            reconnect_interval=42,
+        )
+        assert client._reconnect_interval == 42
+
+        await client.connect()
+        assert client._reconnect_handle is not None
+        client._cancel_reconnect()
+
+    @patch("forgewatch.indicator.client.MessageBus")
     async def test_reconnect_not_doubled(self, mock_bus_class: MagicMock) -> None:
         """Multiple failures should not schedule multiple reconnects."""
         mock_bus_class.return_value.connect = AsyncMock(side_effect=OSError("no bus"))

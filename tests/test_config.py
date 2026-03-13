@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 import pytest
 
-from forgewatch.config import Config, ConfigError, load_config
+from forgewatch.config import Config, ConfigError, IndicatorConfig, load_config, load_indicator_config
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -379,3 +380,243 @@ def test_poll_interval_at_boundary(tmp_path: Path) -> None:
     p.write_text('github_token = "ghp_abc"\ngithub_username = "user"\npoll_interval = 30\n')
     cfg = load_config(p)
     assert cfg.poll_interval == 30
+
+
+# ---------------------------------------------------------------------------
+# Unknown keys warning (Step 3)
+# ---------------------------------------------------------------------------
+
+
+def test_unknown_key_logs_warning(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """Unknown top-level config keys produce log warnings."""
+    content = """\
+github_token = "ghp_abc"
+github_username = "user"
+typo_key = "oops"
+another_unknown = 42
+"""
+    p = tmp_path / "config.toml"
+    p.write_text(content)
+    with caplog.at_level(logging.WARNING, logger="forgewatch.config"):
+        load_config(p)
+    assert any("'another_unknown'" in r.message for r in caplog.records)
+    assert any("'typo_key'" in r.message for r in caplog.records)
+
+
+def test_known_keys_no_warning(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """Known config keys should not produce warnings."""
+    p = tmp_path / "config.toml"
+    p.write_text(MINIMAL_TOML)
+    with caplog.at_level(logging.WARNING, logger="forgewatch.config"):
+        load_config(p)
+    assert not any("Unknown config key" in r.message for r in caplog.records)
+
+
+def test_indicator_section_is_known_key(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """The [indicator] section key should be recognised as known."""
+    content = """\
+github_token = "ghp_abc"
+github_username = "user"
+
+[indicator]
+reconnect_interval = 5
+"""
+    p = tmp_path / "config.toml"
+    p.write_text(content)
+    with caplog.at_level(logging.WARNING, logger="forgewatch.config"):
+        load_config(p)
+    assert not any("Unknown config key" in r.message for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# Multi-error collection (Step 3)
+# ---------------------------------------------------------------------------
+
+
+def test_multiple_errors_collected(tmp_path: Path) -> None:
+    """All validation errors are collected and reported in a single ConfigError."""
+    content = """\
+poll_interval = 5
+log_level = "trace"
+"""
+    p = tmp_path / "config.toml"
+    p.write_text(content)
+    with pytest.raises(ConfigError) as exc_info:
+        load_config(p)
+    msg = str(exc_info.value)
+    # Should contain errors for: missing token, missing username, poll_interval, log_level
+    assert "github_token is required" in msg
+    assert "github_username is required" in msg
+    assert "poll_interval must be >= 30" in msg
+    assert "log_level must be one of" in msg
+
+
+def test_poll_interval_error_includes_recommendation(tmp_path: Path) -> None:
+    """poll_interval error should include the GitHub recommendation."""
+    content = """\
+github_token = "ghp_abc"
+github_username = "user"
+poll_interval = 10
+"""
+    p = tmp_path / "config.toml"
+    p.write_text(content)
+    with pytest.raises(ConfigError, match="GitHub recommends 300s"):
+        load_config(p)
+
+
+def test_repo_format_error_includes_example(tmp_path: Path) -> None:
+    """Invalid repo format error should include an example."""
+    content = """\
+github_token = "ghp_abc"
+github_username = "user"
+repos = ["bad-repo-format"]
+"""
+    p = tmp_path / "config.toml"
+    p.write_text(content)
+    with pytest.raises(ConfigError, match="octocat/Hello-World"):
+        load_config(p)
+
+
+def test_token_error_includes_example_prefix(tmp_path: Path) -> None:
+    """Missing token error should include the ghp_ prefix example."""
+    p = tmp_path / "config.toml"
+    p.write_text('github_username = "user"\n')
+    with pytest.raises(ConfigError, match="ghp_"):
+        load_config(p)
+
+
+# ---------------------------------------------------------------------------
+# IndicatorConfig — load_indicator_config (Step 4)
+# ---------------------------------------------------------------------------
+
+
+def test_load_indicator_config_defaults(tmp_path: Path) -> None:
+    """Missing [indicator] section returns all defaults."""
+    p = tmp_path / "config.toml"
+    p.write_text(MINIMAL_TOML)
+    cfg = load_indicator_config(p)
+    assert cfg == IndicatorConfig()
+    assert cfg.reconnect_interval == 10
+    assert cfg.window_width == 400
+    assert cfg.max_window_height == 500
+
+
+def test_load_indicator_config_with_values(tmp_path: Path) -> None:
+    """Custom [indicator] values are loaded correctly."""
+    content = """\
+github_token = "ghp_abc"
+github_username = "user"
+
+[indicator]
+reconnect_interval = 30
+window_width = 600
+max_window_height = 800
+"""
+    p = tmp_path / "config.toml"
+    p.write_text(content)
+    cfg = load_indicator_config(p)
+    assert cfg.reconnect_interval == 30
+    assert cfg.window_width == 600
+    assert cfg.max_window_height == 800
+
+
+def test_load_indicator_config_partial_values(tmp_path: Path) -> None:
+    """Partial [indicator] section uses defaults for missing keys."""
+    content = """\
+github_token = "ghp_abc"
+github_username = "user"
+
+[indicator]
+reconnect_interval = 5
+"""
+    p = tmp_path / "config.toml"
+    p.write_text(content)
+    cfg = load_indicator_config(p)
+    assert cfg.reconnect_interval == 5
+    assert cfg.window_width == 400  # default
+    assert cfg.max_window_height == 500  # default
+
+
+def test_load_indicator_config_missing_file(tmp_path: Path) -> None:
+    """Missing config file returns defaults (no error)."""
+    cfg = load_indicator_config(tmp_path / "nonexistent.toml")
+    assert cfg == IndicatorConfig()
+
+
+def test_load_indicator_config_invalid_toml(tmp_path: Path) -> None:
+    """Invalid TOML returns defaults (no error)."""
+    p = tmp_path / "config.toml"
+    p.write_text("this is [not valid toml =")
+    cfg = load_indicator_config(p)
+    assert cfg == IndicatorConfig()
+
+
+def test_load_indicator_config_reconnect_interval_too_low(tmp_path: Path) -> None:
+    """reconnect_interval < 1 raises ConfigError."""
+    content = """\
+[indicator]
+reconnect_interval = 0
+"""
+    p = tmp_path / "config.toml"
+    p.write_text(content)
+    with pytest.raises(ConfigError, match="reconnect_interval must be >= 1"):
+        load_indicator_config(p)
+
+
+def test_load_indicator_config_window_width_too_low(tmp_path: Path) -> None:
+    """window_width < 200 raises ConfigError."""
+    content = """\
+[indicator]
+window_width = 100
+"""
+    p = tmp_path / "config.toml"
+    p.write_text(content)
+    with pytest.raises(ConfigError, match="window_width must be >= 200"):
+        load_indicator_config(p)
+
+
+def test_load_indicator_config_max_window_height_too_low(tmp_path: Path) -> None:
+    """max_window_height < 200 raises ConfigError."""
+    content = """\
+[indicator]
+max_window_height = 50
+"""
+    p = tmp_path / "config.toml"
+    p.write_text(content)
+    with pytest.raises(ConfigError, match="max_window_height must be >= 200"):
+        load_indicator_config(p)
+
+
+def test_load_indicator_config_wrong_type(tmp_path: Path) -> None:
+    """Non-integer values raise ConfigError."""
+    content = """\
+[indicator]
+reconnect_interval = "fast"
+"""
+    p = tmp_path / "config.toml"
+    p.write_text(content)
+    with pytest.raises(ConfigError, match="reconnect_interval must be an integer"):
+        load_indicator_config(p)
+
+
+def test_load_indicator_config_multiple_errors(tmp_path: Path) -> None:
+    """Multiple indicator validation errors are collected."""
+    content = """\
+[indicator]
+reconnect_interval = 0
+window_width = 50
+"""
+    p = tmp_path / "config.toml"
+    p.write_text(content)
+    with pytest.raises(ConfigError) as exc_info:
+        load_indicator_config(p)
+    msg = str(exc_info.value)
+    assert "reconnect_interval" in msg
+    assert "window_width" in msg
+
+
+def test_indicator_config_frozen() -> None:
+    """IndicatorConfig is a frozen dataclass."""
+    cfg = IndicatorConfig()
+    with pytest.raises(AttributeError):
+        cfg.reconnect_interval = 99  # type: ignore[misc]

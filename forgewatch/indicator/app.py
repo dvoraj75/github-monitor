@@ -38,7 +38,14 @@ class IndicatorApp:
     3. ``shutdown()`` — disconnect from D-Bus, clean up resources.
     """
 
-    def __init__(self, *, icon_theme: str = "light") -> None:
+    def __init__(
+        self,
+        *,
+        icon_theme: str = "light",
+        reconnect_interval: int = 10,
+        window_width: int = 400,
+        max_window_height: int = 500,
+    ) -> None:
         # Lazy imports — tray and window depend on GTK system packages
         # that are unavailable in headless CI environments.
         from .tray import TrayIcon  # noqa: PLC0415
@@ -55,6 +62,7 @@ class IndicatorApp:
         self._client = DaemonClient(
             on_prs_changed=self._on_prs_changed,
             on_connection_changed=self._on_connection_changed,
+            reconnect_interval=reconnect_interval,
         )
         self._tray: TrayIcon = TrayIcon(
             on_activate=self._on_activate,
@@ -66,6 +74,8 @@ class IndicatorApp:
             on_pr_clicked=self._on_pr_clicked,
             on_refresh=self._on_refresh,
             on_visibility_changed=self._on_window_visibility_changed,
+            window_width=window_width,
+            max_window_height=max_window_height,
         )
 
     # -- public lifecycle ----------------------------------------------------

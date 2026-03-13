@@ -10,11 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Pagination cap warning -- the poller now logs a warning when the page limit is reached and more results are available, suggesting the user narrow their repo filter
+- Configurable indicator settings via a new `[indicator]` TOML section -- `reconnect_interval`, `window_width`, and `max_window_height` can now be tuned without code changes
+- Unknown config key warnings -- `load_config()` now logs a warning for any unrecognised top-level key, helping catch typos early
 
 ### Changed
 
 - Improved first-run experience -- `ConfigError` is now caught and displayed as a user-friendly log message instead of a raw traceback. Missing config suggests running `forgewatch setup`, invalid config suggests checking the config file. The daemon exits cleanly with code 1
 - Logging is now initialised before config loading so that config errors are properly formatted
+- Config validation now collects all errors and reports them in a single `ConfigError`, so users can fix every problem in one pass instead of playing whack-a-mole
+- Validation error messages now include actionable hints (e.g. `ghp_` token prefix example, `GitHub recommends 300s` for poll interval, `octocat/Hello-World` for repo format)
 
 ## [1.4.1] - 2026-03-12
 
