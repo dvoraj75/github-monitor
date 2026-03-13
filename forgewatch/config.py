@@ -39,6 +39,9 @@ _KNOWN_KEYS = frozenset(
         "notifications",
     }
 )
+_KNOWN_INDICATOR_KEYS = frozenset({"reconnect_interval", "window_width", "max_window_height"})
+_KNOWN_NOTIFICATIONS_KEYS = frozenset({"grouping", "repos"})
+_KNOWN_REPO_NOTIFICATION_KEYS = frozenset({"enabled", "urgency", "threshold"})
 
 logger = logging.getLogger(__name__)
 
@@ -49,11 +52,17 @@ class ConfigError(Exception):
 
 @dataclass(frozen=True)
 class RepoNotificationConfig:
-    """Per-repo notification overrides."""
+    """Per-repo notification overrides.
+
+    ``urgency`` and ``threshold`` use ``None`` to mean "inherit the
+    global value".  Only an explicit TOML setting produces a non-None
+    value, so the notifier can distinguish "user set urgency" from
+    "user didn't set urgency (should inherit global)".
+    """
 
     enabled: bool = True
-    urgency: str = "normal"
-    threshold: int = 3
+    urgency: str | None = None
+    threshold: int | None = None
 
 
 @dataclass(frozen=True)
@@ -197,10 +206,39 @@ def _resolve_path(path: Path | str | None) -> Path:
 
 
 def _warn_unknown_keys(raw: dict[str, object]) -> None:
-    """Log warnings for any unrecognised top-level config keys."""
+    """Log warnings for any unrecognised config keys.
+
+    Checks top-level keys as well as keys inside the ``[indicator]``
+    and ``[notifications]`` subsections so that typos like
+    ``reconnect_intervel`` are surfaced instead of silently ignored.
+    """
     unknown = set(raw.keys()) - _KNOWN_KEYS
     for key in sorted(unknown):
         logger.warning("Unknown config key: %r (possible typo?)", key)
+
+    indicator = raw.get("indicator")
+    if isinstance(indicator, dict):
+        unknown_ind = set(indicator.keys()) - _KNOWN_INDICATOR_KEYS
+        for key in sorted(unknown_ind):
+            logger.warning("Unknown key in [indicator]: %r (possible typo?)", key)
+
+    notifications = raw.get("notifications")
+    if isinstance(notifications, dict):
+        unknown_notif = set(notifications.keys()) - _KNOWN_NOTIFICATIONS_KEYS
+        for key in sorted(unknown_notif):
+            logger.warning("Unknown key in [notifications]: %r (possible typo?)", key)
+
+        repos_section = notifications.get("repos")
+        if isinstance(repos_section, dict):
+            for repo_name, repo_raw in repos_section.items():
+                if isinstance(repo_raw, dict):
+                    unknown_repo = set(repo_raw.keys()) - _KNOWN_REPO_NOTIFICATION_KEYS
+                    for key in sorted(unknown_repo):
+                        logger.warning(
+                            "Unknown key in [notifications.repos.%r]: %r (possible typo?)",
+                            repo_name,
+                            key,
+                        )
 
 
 # ---------------------------------------------------------------------------
@@ -237,21 +275,25 @@ def _collect_bool(
     return value
 
 
-def _collect_int_min(
+def _collect_int_min(  # noqa: PLR0913
     raw: dict[str, object],
     key: str,
     *,
     default: int,
     minimum: int,
     errors: list[str],
+    min_error_suffix: str = "",
 ) -> int:
     """Extract and validate an optional integer field with a minimum bound, collecting errors."""
     value = raw.get(key, default)
-    if not isinstance(value, int):
+    if isinstance(value, bool) or not isinstance(value, int):
         errors.append(f"{key} must be an integer, got {type(value).__name__}")
         return default
     if value < minimum:
-        errors.append(f"{key} must be >= {minimum}, got {value}")
+        msg = f"{key} must be >= {minimum}, got {value}"
+        if min_error_suffix:
+            msg = f"{msg} {min_error_suffix}"
+        errors.append(msg)
         return default
     return value
 
@@ -308,142 +350,86 @@ def _collect_repos(
     return [] if has_error else repos
 
 
-# ---------------------------------------------------------------------------
-# Legacy raise-immediately helpers (kept for backward-compat error messages
-# in tests that call them directly — but _validate() no longer uses them)
-# ---------------------------------------------------------------------------
+def _validate_repo_notification(
+    repo_name: str,
+    repo_raw: dict[str, object],
+    errors: list[str],
+) -> RepoNotificationConfig:
+    """Validate a single ``[notifications.repos."owner/repo"]`` entry, collecting errors."""
+    # Validate repo name format against the same pattern used for top-level repos.
+    if not _REPO_PATTERN.match(repo_name):
+        errors.append(
+            f"Invalid repo format in [notifications.repos]: {repo_name!r}"
+            " (expected 'owner/name') \N{EM DASH} example: 'octocat/Hello-World'"
+        )
 
-
-def _require_str(raw: dict[str, object], key: str, error_msg: str) -> str:
-    """Extract a required non-empty string field."""
-    value = raw.get(key, "")
-    if not value or not isinstance(value, str):
-        raise ConfigError(error_msg)
-    return value
-
-
-def _validate_bool(raw: dict[str, object], key: str, *, default: bool) -> bool:
-    """Extract and validate an optional boolean field."""
-    value = raw.get(key, default)
-    if not isinstance(value, bool):
-        msg = f"{key} must be a boolean, got {type(value).__name__}"
-        raise ConfigError(msg)
-    return value
-
-
-def _validate_int_min(raw: dict[str, object], key: str, *, default: int, minimum: int) -> int:
-    """Extract and validate an optional integer field with a minimum bound."""
-    value = raw.get(key, default)
-    if not isinstance(value, int):
-        msg = f"{key} must be an integer, got {type(value).__name__}"
-        raise ConfigError(msg)
-    if value < minimum:
-        msg = f"{key} must be >= {minimum}, got {value}"
-        raise ConfigError(msg)
-    return value
-
-
-def _validate_choice(
-    raw: dict[str, object],
-    key: str,
-    *,
-    default: str,
-    choices: frozenset[str],
-) -> str:
-    """Extract and validate an optional string field against allowed values."""
-    value = raw.get(key, default)
-    if not isinstance(value, str):
-        msg = f"{key} must be a string, got {type(value).__name__}"
-        raise ConfigError(msg)
-    normalised = value.lower()
-    if normalised not in choices:
-        msg = f"{key} must be one of {sorted(choices)}, got {normalised!r}"
-        raise ConfigError(msg)
-    return normalised
-
-
-def _validate_base_url(raw: dict[str, object]) -> str:
-    """Extract and validate the GitHub base URL."""
-    value = raw.get("github_base_url", "https://api.github.com")
-    if not isinstance(value, str):
-        msg = f"github_base_url must be a string, got {type(value).__name__}"
-        raise ConfigError(msg)
-    if not value.startswith(("http://", "https://")):
-        msg = f"github_base_url must start with http:// or https://, got {value!r}"
-        raise ConfigError(msg)
-    return value.rstrip("/")
-
-
-def _validate_repos(raw: dict[str, object]) -> list[str]:
-    """Extract and validate the repos list."""
-    repos = raw.get("repos", [])
-    if not isinstance(repos, list):
-        msg = "repos must be a list"
-        raise ConfigError(msg)
-    for repo in repos:
-        if not isinstance(repo, str) or not _REPO_PATTERN.match(repo):
-            msg = f"Invalid repo format: {repo!r} (expected 'owner/name')"
-            raise ConfigError(msg)
-    return repos
-
-
-def _validate_repo_notification(repo_name: str, repo_raw: dict[str, object]) -> RepoNotificationConfig:
-    """Validate a single ``[notifications.repos."owner/repo"]`` entry."""
     enabled = repo_raw.get("enabled", True)
     if not isinstance(enabled, bool):
-        msg = f"notifications.repos.{repo_name!r}.enabled must be a boolean, got {type(enabled).__name__}"
-        raise ConfigError(msg)
+        errors.append(f"notifications.repos.{repo_name!r}.enabled must be a boolean, got {type(enabled).__name__}")
+        enabled = True
 
-    urgency = repo_raw.get("urgency", "normal")
-    if not isinstance(urgency, str):
-        msg = f"notifications.repos.{repo_name!r}.urgency must be a string, got {type(urgency).__name__}"
-        raise ConfigError(msg)
-    urgency = urgency.lower()
-    if urgency not in _VALID_URGENCIES:
-        msg = f"notifications.repos.{repo_name!r}.urgency must be one of {sorted(_VALID_URGENCIES)}, got {urgency!r}"
-        raise ConfigError(msg)
+    urgency: str | None = None
+    urgency_raw = repo_raw.get("urgency")
+    if urgency_raw is not None:
+        if not isinstance(urgency_raw, str):
+            errors.append(
+                f"notifications.repos.{repo_name!r}.urgency must be a string, got {type(urgency_raw).__name__}"
+            )
+        else:
+            urgency = urgency_raw.lower()
+            if urgency not in _VALID_URGENCIES:
+                errors.append(
+                    f"notifications.repos.{repo_name!r}.urgency must be one of"
+                    f" {sorted(_VALID_URGENCIES)}, got {urgency!r}"
+                )
+                urgency = None
 
-    threshold = repo_raw.get("threshold", 3)
-    if not isinstance(threshold, int):
-        msg = f"notifications.repos.{repo_name!r}.threshold must be an integer, got {type(threshold).__name__}"
-        raise ConfigError(msg)
-    if threshold < 1:
-        msg = f"notifications.repos.{repo_name!r}.threshold must be >= 1, got {threshold}"
-        raise ConfigError(msg)
+    threshold: int | None = None
+    threshold_raw = repo_raw.get("threshold")
+    if threshold_raw is not None:
+        if isinstance(threshold_raw, bool) or not isinstance(threshold_raw, int):
+            errors.append(
+                f"notifications.repos.{repo_name!r}.threshold must be an integer, got {type(threshold_raw).__name__}"
+            )
+        elif threshold_raw < 1:
+            errors.append(f"notifications.repos.{repo_name!r}.threshold must be >= 1, got {threshold_raw}")
+        else:
+            threshold = threshold_raw
 
     return RepoNotificationConfig(enabled=enabled, urgency=urgency, threshold=threshold)
 
 
-def _validate_notifications(raw: dict[str, object]) -> NotificationConfig:
-    """Validate the ``[notifications]`` section and return a NotificationConfig."""
+def _validate_notifications(raw: dict[str, object], errors: list[str]) -> NotificationConfig:
+    """Validate the ``[notifications]`` section, collecting errors."""
     section = raw.get("notifications")
     if section is None:
         return NotificationConfig()
 
     if not isinstance(section, dict):
-        msg = "notifications must be a table"
-        raise ConfigError(msg)
+        errors.append("notifications must be a table")
+        return NotificationConfig()
 
     raw_grouping = section.get("grouping", "flat")
+    grouping = "flat"
     if not isinstance(raw_grouping, str):
-        msg = f"notifications.grouping must be a string, got {type(raw_grouping).__name__}"
-        raise ConfigError(msg)
-    grouping = raw_grouping.lower()
-    if grouping not in _VALID_GROUPING_MODES:
-        msg = f"notifications.grouping must be one of {sorted(_VALID_GROUPING_MODES)}, got {grouping!r}"
-        raise ConfigError(msg)
+        errors.append(f"notifications.grouping must be a string, got {type(raw_grouping).__name__}")
+    else:
+        grouping = raw_grouping.lower()
+        if grouping not in _VALID_GROUPING_MODES:
+            errors.append(f"notifications.grouping must be one of {sorted(_VALID_GROUPING_MODES)}, got {grouping!r}")
+            grouping = "flat"
 
     repos_raw = section.get("repos", {})
     if not isinstance(repos_raw, dict):
-        msg = "notifications.repos must be a table"
-        raise ConfigError(msg)
+        errors.append("notifications.repos must be a table")
+        return NotificationConfig(grouping=grouping)
 
     repo_configs: dict[str, RepoNotificationConfig] = {}
     for repo_name, repo_raw in repos_raw.items():
         if not isinstance(repo_raw, dict):
-            msg = f"notifications.repos.{repo_name!r} must be a table"
-            raise ConfigError(msg)
-        repo_configs[repo_name] = _validate_repo_notification(repo_name, repo_raw)
+            errors.append(f"notifications.repos.{repo_name!r} must be a table")
+            continue
+        repo_configs[repo_name] = _validate_repo_notification(repo_name, repo_raw, errors)
 
     return NotificationConfig(grouping=grouping, repos=repo_configs)
 
@@ -474,11 +460,14 @@ def _validate(raw: dict[str, object]) -> Config:
         errors,
     )
 
-    poll_interval = _collect_int_min(raw, "poll_interval", default=300, minimum=_MIN_POLL_INTERVAL, errors=errors)
-    # Enhance poll_interval error with recommendation if present.
-    for i, err in enumerate(errors):
-        if "poll_interval must be >=" in err:
-            errors[i] = f"{err} (GitHub recommends 300s for personal tokens)"
+    poll_interval = _collect_int_min(
+        raw,
+        "poll_interval",
+        default=300,
+        minimum=_MIN_POLL_INTERVAL,
+        errors=errors,
+        min_error_suffix="(GitHub recommends 300s for personal tokens)",
+    )
 
     repos = _collect_repos(raw, errors)
     log_level = _collect_choice(raw, "log_level", default="info", choices=_VALID_LOG_LEVELS, errors=errors)
@@ -496,6 +485,10 @@ def _validate(raw: dict[str, object]) -> Config:
         errors=errors,
     )
     icon_theme = _collect_choice(raw, "icon_theme", default="light", choices=_VALID_ICON_THEMES, errors=errors)
+
+    # Notifications section is validated into the same error list so that
+    # notification errors are reported together with top-level errors.
+    notifications = _validate_notifications(raw, errors)
 
     if errors:
         msg = "\n".join(errors)
@@ -515,5 +508,5 @@ def _validate(raw: dict[str, object]) -> Config:
         notification_threshold=notification_threshold,
         notification_urgency=notification_urgency,
         icon_theme=icon_theme,
-        notifications=_validate_notifications(raw),
+        notifications=notifications,
     )

@@ -298,3 +298,147 @@ class TestCliDispatch:
             main()
 
         mock_dispatch.assert_not_called()
+
+    @patch("forgewatch.cli.dispatch")
+    def test_dispatches_completions(self, mock_dispatch: MagicMock) -> None:
+        """Completions subcommand should be dispatched via cli.dispatch."""
+        with patch("sys.argv", ["forgewatch", "completions", "bash"]):
+            main()
+        mock_dispatch.assert_called_once()
+        args = mock_dispatch.call_args[0][0]
+        assert args.command == "completions"
+        assert args.shell == "bash"
+
+
+# ---------------------------------------------------------------------------
+# Tests: basicConfig ordering
+# ---------------------------------------------------------------------------
+
+
+class TestBasicConfigOrdering:
+    """logging.basicConfig must be called before load_config()."""
+
+    def test_basic_config_called_before_load_config(self) -> None:
+        """basicConfig runs before load_config so config errors are properly logged."""
+        call_order: list[str] = []
+
+        def track_basic_config(**_kwargs: object) -> None:
+            call_order.append("basicConfig")
+
+        def track_load_config(_path: object = None) -> Config:
+            call_order.append("load_config")
+            return _make_config()
+
+        mock_daemon = MagicMock()
+        mock_daemon.start = AsyncMock()
+        mock_daemon.stop = AsyncMock()
+
+        with (
+            patch("logging.basicConfig", side_effect=track_basic_config),
+            patch("forgewatch.config.load_config", side_effect=track_load_config),
+            patch("forgewatch.daemon.Daemon", return_value=mock_daemon),
+            patch("sys.argv", ["forgewatch"]),
+        ):
+            main()
+
+        assert call_order.index("basicConfig") < call_order.index("load_config")
+
+
+# ---------------------------------------------------------------------------
+# Tests: TOML parse error path
+# ---------------------------------------------------------------------------
+
+
+class TestTomlParseError:
+    """Invalid TOML should produce the 'check your config file' error path."""
+
+    def test_invalid_toml_exits_with_check_hint(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Invalid TOML error should suggest checking config, not 'forgewatch setup'."""
+        with (
+            patch(
+                "forgewatch.config.load_config",
+                side_effect=ConfigError("Invalid TOML in /path/config.toml: unexpected char"),
+            ),
+            patch("sys.argv", ["forgewatch"]),
+            caplog.at_level(logging.ERROR),
+            pytest.raises(SystemExit, match="1"),
+        ):
+            main()
+
+        assert any("check your config file" in r.message.lower() for r in caplog.records)
+        # Should NOT suggest forgewatch setup (the file exists, it's just invalid)
+        assert not any("forgewatch setup" in r.message for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# Tests: --verbose + ConfigError
+# ---------------------------------------------------------------------------
+
+
+class TestVerboseWithConfigError:
+    """--verbose flag combined with a config error."""
+
+    def test_verbose_config_error_uses_debug_level(self, caplog: pytest.LogCaptureFixture) -> None:
+        """With -v flag, logging should be set to DEBUG even when config load fails."""
+        with (
+            patch(
+                "forgewatch.config.load_config",
+                side_effect=ConfigError("Config file not found: /nonexistent"),
+            ),
+            patch("sys.argv", ["forgewatch", "-v"]),
+            patch("logging.basicConfig") as mock_basic_config,
+            pytest.raises(SystemExit, match="1"),
+        ):
+            main()
+
+        call_kwargs: dict[str, Any] = mock_basic_config.call_args[1]
+        assert call_kwargs["level"] == logging.DEBUG
+
+
+# ---------------------------------------------------------------------------
+# Tests: post-config log level
+# ---------------------------------------------------------------------------
+
+
+class TestPostConfigLogLevel:
+    """Root logger level should be reconfigured from config.log_level."""
+
+    def test_config_log_level_applied(self) -> None:
+        """After successful load, the root logger level should match config.log_level."""
+        config = Config(
+            github_token="ghp_test",
+            github_username="testuser",
+            log_level="warning",
+        )
+        mock_daemon = MagicMock()
+        mock_daemon.start = AsyncMock()
+        mock_daemon.stop = AsyncMock()
+
+        with (
+            patch("forgewatch.config.load_config", return_value=config),
+            patch("forgewatch.daemon.Daemon", return_value=mock_daemon),
+            patch("sys.argv", ["forgewatch"]),
+        ):
+            main()
+
+        assert logging.getLogger().level == logging.WARNING
+
+    def test_verbose_flag_overrides_config_log_level(self) -> None:
+        """--verbose should override config.log_level to DEBUG."""
+        config = Config(
+            github_token="ghp_test",
+            github_username="testuser",
+            log_level="warning",
+        )
+        mock_daemon = MagicMock()
+        mock_daemon.start = AsyncMock()
+        mock_daemon.stop = AsyncMock()
+
+        with (
+            patch("forgewatch.config.load_config", return_value=config),
+            patch("forgewatch.daemon.Daemon", return_value=mock_daemon),
+            patch("sys.argv", ["forgewatch", "-v"]),
+        ):
+            main()
+
+        assert logging.getLogger().level == logging.DEBUG

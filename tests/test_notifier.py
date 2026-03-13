@@ -1202,3 +1202,124 @@ class TestNotifyRepoOverrides:
             await notify_new_prs(prs, repo_overrides=None)
 
             mock_exec.assert_called_once()
+
+    async def test_override_with_only_enabled_inherits_global_urgency(self) -> None:
+        """Repo with only ``enabled=true`` should inherit global urgency, not the dataclass default."""
+        from forgewatch.config import RepoNotificationConfig
+
+        pr = _make_pr(number=1, repo="acme/web")
+        overrides = {
+            "acme/web": RepoNotificationConfig(enabled=True),
+        }
+        proc = _mock_process()
+
+        with (
+            patch("forgewatch.notifier._download_avatar", return_value=None),
+            patch(
+                "forgewatch.notifier.asyncio.create_subprocess_exec",
+                return_value=proc,
+            ) as mock_exec,
+        ):
+            await notify_new_prs([pr], urgency="critical", repo_overrides=overrides)
+
+            args = mock_exec.call_args[0]
+            # Should use global urgency="critical", NOT the dataclass default "normal"
+            assert "--urgency=critical" in args
+
+    async def test_override_with_only_enabled_inherits_global_threshold(self) -> None:
+        """Repo with only ``enabled=true`` should inherit global threshold."""
+        from forgewatch.config import RepoNotificationConfig
+
+        prs = [_make_pr(number=i, repo="acme/web") for i in range(1, 3)]
+        overrides = {
+            "acme/web": RepoNotificationConfig(enabled=True),
+        }
+        proc = _mock_process()
+
+        with (
+            patch("forgewatch.notifier._download_avatar", return_value=None),
+            patch(
+                "forgewatch.notifier.asyncio.create_subprocess_exec",
+                return_value=proc,
+            ) as mock_exec,
+        ):
+            # threshold=5 (global) => 2 PRs should be individual, not batch
+            await notify_new_prs(prs, grouping="repo", threshold=5, repo_overrides=overrides)
+
+            assert mock_exec.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# Tests: flat-mode batch + per-repo urgency overrides
+# ---------------------------------------------------------------------------
+
+
+class TestFlatModeBatchUrgency:
+    """Flat-mode batch notification should use the highest per-repo urgency."""
+
+    async def test_flat_batch_uses_highest_per_repo_urgency(self) -> None:
+        """Mixed repos in batch: highest per-repo urgency wins."""
+        from forgewatch.config import RepoNotificationConfig
+
+        prs = [_make_pr(number=i, repo="acme/web") for i in range(1, 3)] + [
+            _make_pr(number=i, repo="acme/api") for i in range(3, 5)
+        ]
+        overrides = {
+            "acme/web": RepoNotificationConfig(urgency="critical"),
+            "acme/api": RepoNotificationConfig(urgency="low"),
+        }
+        proc = _mock_process()
+
+        with patch(
+            "forgewatch.notifier.asyncio.create_subprocess_exec",
+            return_value=proc,
+        ) as mock_exec:
+            await notify_new_prs(prs, threshold=1, urgency="normal", repo_overrides=overrides)
+
+            mock_exec.assert_called_once()
+            args = mock_exec.call_args[0]
+            assert "--urgency=critical" in args
+
+    async def test_flat_batch_with_no_overrides_uses_global(self) -> None:
+        """Without per-repo overrides, batch should use global urgency."""
+        prs = [_make_pr(number=i) for i in range(1, 6)]
+        proc = _mock_process()
+
+        with patch(
+            "forgewatch.notifier.asyncio.create_subprocess_exec",
+            return_value=proc,
+        ) as mock_exec:
+            await notify_new_prs(prs, urgency="low")
+
+            args = mock_exec.call_args[0]
+            assert "--urgency=low" in args
+
+
+# ---------------------------------------------------------------------------
+# Tests: repo-mode batch truncation at _BATCH_BODY_LIMIT
+# ---------------------------------------------------------------------------
+
+
+class TestRepoModeBatchTruncation:
+    """Repo-grouped summary body should truncate at _BATCH_BODY_LIMIT."""
+
+    async def test_repo_batch_body_truncates_to_limit(self) -> None:
+        """Only the first _BATCH_BODY_LIMIT PRs appear in repo-grouped summary body."""
+        prs = [_make_pr(number=i, repo="acme/web", title=f"PR {i}") for i in range(1, 9)]
+        proc = _mock_process()
+
+        with patch(
+            "forgewatch.notifier.asyncio.create_subprocess_exec",
+            return_value=proc,
+        ) as mock_exec:
+            await notify_new_prs(prs, grouping="repo")
+
+            mock_exec.assert_called_once()
+            args = mock_exec.call_args[0]
+            body = args[-1]
+            # First _BATCH_BODY_LIMIT PRs should be present
+            for i in range(1, _BATCH_BODY_LIMIT + 1):
+                assert f"PR {i}" in body
+            # PRs beyond the limit should NOT be present
+            for i in range(_BATCH_BODY_LIMIT + 1, 9):
+                assert f"PR {i}" not in body

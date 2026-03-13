@@ -84,7 +84,7 @@ class DaemonClient:
     Connects to the session bus, obtains a proxy for the daemon's D-Bus
     interface, and subscribes to the ``PullRequestsChanged`` signal.
     If the daemon is not running (or disappears), the client automatically
-    retries the connection every ``_RECONNECT_INTERVAL_S`` seconds.
+    retries the connection after the configured reconnect interval.
     """
 
     def __init__(
@@ -248,7 +248,7 @@ class DaemonClient:
         self._schedule_reconnect()
 
     def _schedule_reconnect(self) -> None:
-        """Schedule a reconnection attempt after ``_RECONNECT_INTERVAL_S`` seconds."""
+        """Schedule a reconnection attempt after the configured reconnect interval."""
         if self._reconnect_handle is not None:
             return  # already scheduled
         loop = asyncio.get_running_loop()
