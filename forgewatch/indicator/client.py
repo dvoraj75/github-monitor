@@ -17,6 +17,8 @@ from dbus_next.aio.message_bus import MessageBus
 from dbus_next.constants import MessageType
 from dbus_next.errors import DBusError
 
+from forgewatch.constants import BUS_NAME, INTERFACE_NAME, OBJECT_PATH
+
 from .models import DaemonStatus, PRInfo
 
 if TYPE_CHECKING:
@@ -26,13 +28,6 @@ if TYPE_CHECKING:
     from dbus_next.message import Message
 
 logger = logging.getLogger(__name__)
-
-# D-Bus coordinates — duplicated from dbus_service.py intentionally
-# because the indicator is a separate process and should not import
-# daemon internals.
-BUS_NAME = "org.forgewatch.Daemon"
-OBJECT_PATH = "/org/forgewatch/Daemon"
-INTERFACE_NAME = "org.forgewatch.Daemon"
 
 _RECONNECT_INTERVAL_S = 10
 

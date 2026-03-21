@@ -16,6 +16,8 @@ from typing import TYPE_CHECKING, Any
 from dbus_next.aio.message_bus import MessageBus
 from dbus_next.service import ServiceInterface, method, signal
 
+from .constants import BUS_NAME, INTERFACE_NAME, OBJECT_PATH
+
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
@@ -23,11 +25,6 @@ if TYPE_CHECKING:
     from .store import PRStore, StoreStatus
 
 logger = logging.getLogger(__name__)
-
-# D-Bus naming constants
-BUS_NAME = "org.forgewatch.Daemon"
-OBJECT_PATH = "/org/forgewatch/Daemon"
-INTERFACE_NAME = "org.forgewatch.Daemon"
 
 
 # ---------------------------------------------------------------------------
