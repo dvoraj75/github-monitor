@@ -10,6 +10,8 @@ from dbus_next.message import Message
 
 logger = logging.getLogger(__name__)
 
+_ALLOWED_SCHEMES = frozenset(("http", "https"))
+
 
 # XDG Desktop Portal D-Bus coordinates.  The portal allows sandboxed
 # processes (systemd services, Flatpak, Snap) to open URLs in the
@@ -22,10 +24,20 @@ _PORTAL_INTERFACE = "org.freedesktop.portal.OpenURI"
 async def open_url(url: str) -> None:
     """Open *url* in the default browser.
 
+    Only ``http`` and ``https`` URLs are accepted.  Any other scheme is
+    rejected with a warning to prevent opening arbitrary protocols via
+    ``xdg-open`` or the XDG Desktop Portal.
+
     Tries the XDG Desktop Portal first (works from sandboxed systemd
     services), then falls back to ``xdg-open`` for environments where
     the portal is unavailable (e.g. minimal window managers).
     """
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    if parsed.scheme not in _ALLOWED_SCHEMES:
+        logger.warning("Rejected URL with disallowed scheme %r: %s", parsed.scheme, url)
+        return
     if await _open_url_portal(url):
         return
     await _open_url_xdg(url)
