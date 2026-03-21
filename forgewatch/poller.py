@@ -114,6 +114,7 @@ class GitHubClient:
                 "Accept": "application/vnd.github+json",
                 "X-GitHub-Api-Version": "2022-11-28",
             },
+            timeout=aiohttp.ClientTimeout(total=30),
         )
 
     async def close(self) -> None:
